@@ -77,6 +77,8 @@ export default function AdminDashboardPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [staff, setStaff] = useState<Profile[]>([]);
+  const [customers, setCustomers] = useState<Profile[]>([]);
+  const [staffSearch, setStaffSearch] = useState('');
   const [slides, setSlides] = useState<PromoSlide[]>([]);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [savingCatId, setSavingCatId] = useState<string | null>(null);
@@ -161,8 +163,14 @@ export default function AdminDashboardPage() {
       const { data } = await supabase.from('stores').select('*').order('name');
       setStores(data ?? []);
     } else if (t === 'staff') {
-      const { data } = await supabase.from('profiles').select('*, store:stores(name)').neq('role', 'customer').order('full_name');
-      setStaff(data ?? []);
+      const [staffRes, custRes, storesRes] = await Promise.all([
+        supabase.from('profiles').select('*, store:stores(name)').neq('role', 'customer').order('full_name'),
+        supabase.from('profiles').select('*').eq('role', 'customer').order('full_name'),
+        stores.length ? Promise.resolve({ data: stores }) : supabase.from('stores').select('*').order('name'),
+      ]);
+      setStaff(staffRes.data ?? []);
+      setCustomers(custRes.data ?? []);
+      if (!stores.length) setStores((storesRes as any).data ?? []);
     } else if (t === 'promos') {
       const { data } = await supabase.from('promo_slides').select('*').order('sort_order');
       setSlides(data ?? []);
@@ -330,8 +338,16 @@ export default function AdminDashboardPage() {
   };
 
   const updateStaffRole = async (staffId: string, role: string, storeId: string | null) => {
-    await supabase.from('profiles').update({ role, assigned_store_id: storeId }).eq('id', staffId);
-    setStaff(prev => prev.map(s => s.id === staffId ? { ...s, role: role as any, assigned_store_id: storeId } : s));
+    const { error } = await supabase.from('profiles').update({ role, assigned_store_id: storeId }).eq('id', staffId);
+    if (error) { alert(error.message); return; }
+    loadTab('staff'); // reload so people move between the Team and Accounts lists
+  };
+
+  // Promote an existing customer account to staff (or admin).
+  const promoteToStaff = async (id: string, role: 'staff' | 'super_admin') => {
+    const { error } = await supabase.from('profiles').update({ role }).eq('id', id);
+    if (error) { alert(error.message); return; }
+    loadTab('staff');
   };
 
   const isGroceryProduct = (product: Product): boolean => {
@@ -901,8 +917,52 @@ export default function AdminDashboardPage() {
             {tab === 'staff' && (
               <div className="space-y-3">
                 <div className="bg-tpl-pale/60 border border-tpl-lime/30 rounded-xl p-4 text-sm text-tpl-forest">
-                  Invite staff by having them create a customer account first, then change their role here.
+                  Anyone who signs up gets a <b>customer</b> account. To add a team member, have them sign up first, then promote their account below.
                 </div>
+
+                {/* Add a staff member from existing accounts */}
+                <div className="bg-white rounded-2xl shadow-card p-5">
+                  <h3 className="font-semibold text-tpl-dark mb-1">Add a staff member</h3>
+                  <p className="text-xs text-gray-500 mb-3">Pick a customer account and promote it to staff or admin. You can assign their store in the Team list below.</p>
+                  <div className="relative mb-3">
+                    <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <input
+                      value={staffSearch}
+                      onChange={e => setStaffSearch(e.target.value)}
+                      placeholder="Search accounts by name…"
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime"
+                    />
+                  </div>
+                  {(() => {
+                    const matches = customers.filter(c => !staffSearch || (c.full_name ?? '').toLowerCase().includes(staffSearch.toLowerCase()));
+                    if (customers.length === 0) return <p className="text-sm text-gray-400 py-4 text-center">No customer accounts yet. Ask your team to sign up first, then promote them here.</p>;
+                    if (matches.length === 0) return <p className="text-sm text-gray-400 py-4 text-center">No accounts match your search.</p>;
+                    return (
+                      <div className="max-h-72 overflow-y-auto divide-y divide-gray-100">
+                        {matches.map(c => (
+                          <div key={c.id} className="flex items-center justify-between gap-3 py-2">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-tpl-dark truncate">{c.full_name || '(No name)'}</p>
+                              <p className="text-[11px] text-gray-400 font-mono">{c.id.slice(0, 12)}</p>
+                            </div>
+                            <div className="flex gap-2 flex-shrink-0">
+                              <button onClick={() => promoteToStaff(c.id, 'staff')}
+                                className="text-xs px-3 py-1.5 bg-tpl-forest text-white rounded-lg font-medium hover:bg-tpl-mid transition-colors">
+                                Make staff
+                              </button>
+                              <button onClick={() => promoteToStaff(c.id, 'super_admin')}
+                                className="text-xs px-3 py-1.5 border border-gray-200 text-gray-600 rounded-lg font-medium hover:bg-gray-50 transition-colors">
+                                Make admin
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <h3 className="font-semibold text-tpl-dark pt-2 px-1">Team ({staff.length})</h3>
                 {staff.map(member => (
                   <div key={member.id} className="bg-white rounded-2xl shadow-card p-5">
                     <div className="flex flex-wrap items-center justify-between gap-4">
