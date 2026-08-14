@@ -9,6 +9,12 @@ DECLARE
   p16 uuid := gen_random_uuid(); p17 uuid := gen_random_uuid(); p18 uuid := gen_random_uuid();
   p19 uuid := gen_random_uuid(); p20 uuid := gen_random_uuid();
 BEGIN
+  -- Ensure the Rice category exists (originally expected from a Square sync).
+  -- Idempotent so re-running the setup is safe.
+  INSERT INTO categories (id, square_id, name, sort_order)
+  VALUES (rice_cat_id, 'LOCAL-CAT-RICE', 'Rice', 10)
+  ON CONFLICT (id) DO NOTHING;
+
   INSERT INTO products (id, square_item_id, category_id, name, image_url, active) VALUES
     (p1,  'LOCAL-RICE-01', rice_cat_id, 'Derana Red Raw Keeri Samba Rice 5kg',          '/images/WhatsApp_Image_2026-06-16_at_6.24.46_PM_(1).jpeg', true),
     (p2,  'LOCAL-RICE-02', rice_cat_id, 'Araliya Keeri Samba Rice 5kg',                  '/images/WhatsApp_Image_2026-06-16_at_6.24.46_PM_(2).jpeg', true),

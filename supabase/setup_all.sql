@@ -634,6 +634,12 @@ DECLARE
   p16 uuid := gen_random_uuid(); p17 uuid := gen_random_uuid(); p18 uuid := gen_random_uuid();
   p19 uuid := gen_random_uuid(); p20 uuid := gen_random_uuid();
 BEGIN
+  -- Ensure the Rice category exists (originally expected from a Square sync).
+  -- Idempotent so re-running the setup is safe.
+  INSERT INTO categories (id, square_id, name, sort_order)
+  VALUES (rice_cat_id, 'LOCAL-CAT-RICE', 'Rice', 10)
+  ON CONFLICT (id) DO NOTHING;
+
   INSERT INTO products (id, square_item_id, category_id, name, image_url, active) VALUES
     (p1,  'LOCAL-RICE-01', rice_cat_id, 'Derana Red Raw Keeri Samba Rice 5kg',          '/images/WhatsApp_Image_2026-06-16_at_6.24.46_PM_(1).jpeg', true),
     (p2,  'LOCAL-RICE-02', rice_cat_id, 'Araliya Keeri Samba Rice 5kg',                  '/images/WhatsApp_Image_2026-06-16_at_6.24.46_PM_(2).jpeg', true),
@@ -826,6 +832,21 @@ DECLARE
   kp3 uuid := gen_random_uuid(); kp4 uuid := gen_random_uuid();
   kp5 uuid := gen_random_uuid(); kp6 uuid := gen_random_uuid();
 BEGIN
+  -- Ensure the clothing categories exist (originally expected from a Square
+  -- sync). Idempotent so re-running the setup is safe.
+  INSERT INTO categories (id, square_id, name, sort_order, section) VALUES
+    (women_cat, 'LOCAL-CAT-WOMEN', 'Women', 20, 'clothing'),
+    (men_cat,   'LOCAL-CAT-MEN',   'Men',   21, 'clothing'),
+    (kids_cat,  'LOCAL-CAT-KIDS',  'Kids',  22, 'clothing')
+  ON CONFLICT (id) DO NOTHING;
+
+  -- Ensure the demo stores exist so inventory can attach. These are placeholder
+  -- stores you can rename or delete in Admin → Stores.
+  INSERT INTO stores (id, square_location_id, name, address, pickup_enabled, delivery_enabled) VALUES
+    (dandenong, 'LOCAL-LOC-DANDENONG', 'TPL Spices Dandenong', 'Dandenong VIC 3175', true, true),
+    (clayton,   'LOCAL-LOC-CLAYTON',   'TPL Spices Clayton',   'Clayton VIC 3168',   true, false)
+  ON CONFLICT (id) DO NOTHING;
+
   -- WOMEN
   INSERT INTO products (id, square_item_id, category_id, name, description, image_url, active) VALUES
     (wp1, 'LOCAL-CLO-W-01', women_cat, 'Casual Cotton T-Shirt',
