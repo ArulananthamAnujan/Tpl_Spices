@@ -24,6 +24,7 @@ export default function StorefrontPage() {
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [storeDropOpen, setStoreDropOpen] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [stockMap, setStockMap] = useState<Record<string, number>>({});
 
   // Sync state from URL params
   useEffect(() => {
@@ -99,6 +100,23 @@ export default function StorefrontPage() {
   useEffect(() => {
     if (categories.length > 0) fetchProducts();
   }, [categories]);
+
+  // Stock levels for the selected store, for whichever variations are on screen
+  useEffect(() => {
+    if (!selectedStore || products.length === 0) { setStockMap({}); return; }
+    const variationIds = products.flatMap(p => (p.variations ?? []).map(v => v.id));
+    if (variationIds.length === 0) { setStockMap({}); return; }
+    supabase
+      .from('store_inventory')
+      .select('variation_id, quantity')
+      .eq('store_id', selectedStore.id)
+      .in('variation_id', variationIds)
+      .then(({ data }) => {
+        const map: Record<string, number> = {};
+        (data ?? []).forEach(r => { map[r.variation_id] = r.quantity; });
+        setStockMap(map);
+      });
+  }, [selectedStore, products]);
 
   const switchSection = (s: Section) => {
     setSection(s);
@@ -326,6 +344,7 @@ export default function StorefrontPage() {
                       key={product.id}
                       product={product}
                       store={selectedStore}
+                      stock={stockMap}
                       onClick={() => navigate(`/product/${product.id}`, { state: { store: selectedStore } })}
                     />
                   ))}

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ShoppingCart, Tag, ChevronDown } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Tag } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Product, ProductVariation, Store, formatPrice } from '../lib/types';
 import { useCart } from '../contexts/CartContext';
 import LoadingSpinner from '../components/LoadingSpinner';
+import ProductCard from '../components/ProductCard';
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -17,6 +18,8 @@ export default function ProductDetailPage() {
   const [selectedVariation, setSelectedVariation] = useState<ProductVariation | null>(null);
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
+  const [stockMap, setStockMap] = useState<Record<string, number>>({});
+  const [related, setRelated] = useState<Product[]>([]);
 
   const store: Store | null = (location.state as any)?.store ?? null;
 
@@ -34,8 +37,41 @@ export default function ProductDetailPage() {
       });
   }, [id]);
 
+  useEffect(() => {
+    if (!product?.category_id) { setRelated([]); return; }
+    supabase
+      .from('products')
+      .select('*, category:categories(*), variations:product_variations(*)')
+      .eq('category_id', product.category_id)
+      .eq('active', true)
+      .neq('id', product.id)
+      .limit(8)
+      .then(({ data }) => setRelated(data ?? []));
+  }, [product?.category_id, product?.id]);
+
+  useEffect(() => {
+    if (!store || !product?.variations?.length) { setStockMap({}); return; }
+    supabase
+      .from('store_inventory')
+      .select('variation_id, quantity')
+      .eq('store_id', store.id)
+      .in('variation_id', product.variations.map(v => v.id))
+      .then(({ data }) => {
+        const map: Record<string, number> = {};
+        (data ?? []).forEach(r => { map[r.variation_id] = r.quantity; });
+        setStockMap(map);
+      });
+  }, [store, product]);
+
+  const selectedStock = selectedVariation ? stockMap[selectedVariation.id] : undefined;
+  const outOfStock = selectedStock !== undefined && selectedStock <= 0;
+
+  useEffect(() => {
+    if (selectedStock !== undefined && qty > selectedStock) setQty(Math.max(1, selectedStock));
+  }, [selectedStock]);
+
   const handleAdd = () => {
-    if (!selectedVariation || !store || !product) return;
+    if (!selectedVariation || !store || !product || outOfStock) return;
     addItem({
       variation_id: selectedVariation.id,
       product_id: product.id,
@@ -102,27 +138,38 @@ export default function ProductDetailPage() {
               )}
 
               {selectedVariation && (
-                <div className="mb-6">
+                <div className="mb-2">
                   <span className="text-3xl font-bold text-tpl-forest">{formatPrice(selectedVariation.price_cents)}</span>
                   <span className="text-sm text-gray-400 ml-2">AUD</span>
                 </div>
+              )}
+              {outOfStock ? (
+                <p className="text-sm font-semibold text-red-500 mb-6">Out of stock at this store</p>
+              ) : selectedStock !== undefined && selectedStock <= 5 ? (
+                <p className="text-sm font-medium text-tpl-amber mb-6">Only {selectedStock} left at this store</p>
+              ) : (
+                <div className="mb-6" />
               )}
 
               {/* Quantity + Add */}
               {store ? (
                 <div className="flex items-center gap-4 mt-auto">
                   <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden">
-                    <button onClick={() => setQty(q => Math.max(1, q - 1))} className="px-3 py-2 text-gray-500 hover:bg-gray-50 text-lg font-bold">−</button>
+                    <button onClick={() => setQty(q => Math.max(1, q - 1))} disabled={outOfStock} className="px-3 py-2 text-gray-500 hover:bg-gray-50 text-lg font-bold disabled:opacity-30">−</button>
                     <span className="px-4 py-2 text-sm font-semibold min-w-[2.5rem] text-center">{qty}</span>
-                    <button onClick={() => setQty(q => q + 1)} className="px-3 py-2 text-gray-500 hover:bg-gray-50 text-lg font-bold">+</button>
+                    <button
+                      onClick={() => setQty(q => selectedStock !== undefined ? Math.min(selectedStock, q + 1) : q + 1)}
+                      disabled={outOfStock || (selectedStock !== undefined && qty >= selectedStock)}
+                      className="px-3 py-2 text-gray-500 hover:bg-gray-50 text-lg font-bold disabled:opacity-30"
+                    >+</button>
                   </div>
                   <button
                     onClick={handleAdd}
-                    disabled={!selectedVariation}
+                    disabled={!selectedVariation || outOfStock}
                     className={`flex-1 flex items-center justify-center gap-2 py-3 px-6 rounded-xl font-semibold text-sm transition-all ${added ? 'bg-tpl-lime text-tpl-dark' : 'bg-tpl-forest text-white hover:bg-tpl-mid'} disabled:opacity-40`}
                   >
                     <ShoppingCart className="h-4 w-4" />
-                    {added ? 'Added to Cart!' : 'Add to Cart'}
+                    {outOfStock ? 'Out of Stock' : added ? 'Added to Cart!' : 'Add to Cart'}
                   </button>
                 </div>
               ) : (
@@ -133,6 +180,23 @@ export default function ProductDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Related products */}
+        {related.length > 0 && (
+          <div className="mt-10">
+            <h2 className="font-display text-xl font-bold text-tpl-dark mb-4">You might also like</h2>
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {related.map(p => (
+                <ProductCard
+                  key={p.id}
+                  product={p}
+                  store={store}
+                  onClick={() => navigate(`/product/${p.id}`, { state: { store } })}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

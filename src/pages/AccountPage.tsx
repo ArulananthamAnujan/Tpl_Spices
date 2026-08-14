@@ -24,7 +24,7 @@ export default function AccountPage() {
       .then(({ data }) => { setOrders(data ?? []); setLoading(false); });
   }, [user]);
 
-  const handleReorder = (order: Order) => {
+  const handleReorder = (_order: Order) => {
     navigate('/');
   };
 

@@ -21,6 +21,7 @@ export interface Store {
   pickup_enabled: boolean;
   delivery_enabled: boolean;
   delivery_radius_km: number;
+  delivery_fee_cents: number;
   created_at: string;
 }
 

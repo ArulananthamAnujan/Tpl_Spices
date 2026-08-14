@@ -1,8 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Package, Clock, MapPin, ChevronRight, RefreshCw, Filter } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
 import { Order, OrderStatus, formatPrice } from '../lib/types';
 import OrderStatusBadge from '../components/OrderStatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -22,8 +20,6 @@ const STATUS_NEXT_LABEL: Partial<Record<OrderStatus, string>> = {
 };
 
 export default function StaffDashboardPage() {
-  const { profile } = useAuth();
-  const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<OrderStatus | 'all'>('all');

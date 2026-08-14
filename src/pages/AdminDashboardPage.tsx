@@ -1,17 +1,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
   Store as StoreIcon, Users, Package, RefreshCw, Plus, Edit2, Trash2,
   CheckCircle, AlertCircle, Megaphone, Upload, X, ToggleLeft, ToggleRight,
-  Image as ImageIcon, Type, Tag, Shirt, Salad, Camera, Search as SearchIcon, Wand2, Loader2
+  Image as ImageIcon, Type, Tag, Shirt, Salad, Camera, Search as SearchIcon, Wand2, Loader2, Boxes
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
 import { Store, Profile, Order, PromoSlide, Category, Product, formatPrice } from '../lib/types';
 import OrderStatusBadge from '../components/OrderStatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 
-type Tab = 'orders' | 'stores' | 'staff' | 'catalog' | 'categories' | 'products' | 'promos';
+type Tab = 'orders' | 'stores' | 'staff' | 'catalog' | 'categories' | 'products' | 'inventory' | 'promos';
 
 const EMPTY_SLIDE: Partial<PromoSlide> = {
   title: '',
@@ -27,8 +25,6 @@ const EMPTY_SLIDE: Partial<PromoSlide> = {
 };
 
 export default function AdminDashboardPage() {
-  const { profile } = useAuth();
-  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>('orders');
   const [orders, setOrders] = useState<Order[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
@@ -75,7 +71,6 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(false);
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState('');
-  const [error, setError] = useState('');
   const [squareToken, setSquareToken] = useState('');
   const [squareEnv, setSquareEnv] = useState<'sandbox' | 'production'>('production');
   const [testResult, setTestResult] = useState<any>(null);
@@ -84,6 +79,15 @@ export default function AdminDashboardPage() {
   // Store form
   const [storeForm, setStoreForm] = useState<Partial<Store> | null>(null);
   const [savingStore, setSavingStore] = useState(false);
+
+  // Inventory management
+  const [invStoreId, setInvStoreId] = useState('');
+  const [invProducts, setInvProducts] = useState<Product[]>([]);
+  const [invLoading, setInvLoading] = useState(false);
+  const [invRows, setInvRows] = useState<Record<string, number>>({}); // variation_id -> tracked quantity
+  const [invDrafts, setInvDrafts] = useState<Record<string, string>>({}); // variation_id -> input value while editing
+  const [invSavingId, setInvSavingId] = useState<string | null>(null);
+  const [invSearch, setInvSearch] = useState('');
 
   // Promo slide form
   const [slideForm, setSlideForm] = useState<Partial<PromoSlide> | null>(null);
@@ -96,7 +100,7 @@ export default function AdminDashboardPage() {
   useEffect(() => { loadTab(tab); }, [tab]);
 
   const loadTab = async (t: Tab) => {
-    setLoading(true); setError('');
+    setLoading(true);
     if (t === 'orders') {
       const { data } = await supabase.from('orders').select('*, store:stores(name), order_items(*)').order('created_at', { ascending: false }).limit(100);
       setOrders(data ?? []);
@@ -115,8 +119,55 @@ export default function AdminDashboardPage() {
     } else if (t === 'products') {
       const { data } = await supabase.from('products').select('*, category:categories(name, section)').eq('active', true).order('name');
       setProducts(data ?? []);
+    } else if (t === 'inventory') {
+      const [storesRes, productsRes] = await Promise.all([
+        stores.length ? Promise.resolve({ data: stores }) : supabase.from('stores').select('*').order('name'),
+        supabase.from('products').select('*, category:categories(name), variations:product_variations(*)').eq('active', true).order('name'),
+      ]);
+      if (!stores.length) setStores((storesRes as any).data ?? []);
+      const loadedStores = stores.length ? stores : ((storesRes as any).data ?? []);
+      setInvProducts((productsRes as any).data ?? []);
+      if (!invStoreId && loadedStores.length > 0) setInvStoreId(loadedStores[0].id);
     }
     setLoading(false);
+  };
+
+  const loadInventoryForStore = useCallback(async (storeId: string) => {
+    if (!storeId) return;
+    setInvLoading(true);
+    const { data } = await supabase.from('store_inventory').select('variation_id, quantity').eq('store_id', storeId);
+    const map: Record<string, number> = {};
+    (data ?? []).forEach(r => { map[r.variation_id] = r.quantity; });
+    setInvRows(map);
+    setInvDrafts({});
+    setInvLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'inventory' && invStoreId) loadInventoryForStore(invStoreId);
+  }, [tab, invStoreId, loadInventoryForStore]);
+
+  const saveInventoryQty = async (variationId: string, qtyStr: string) => {
+    const qty = Math.max(0, Math.floor(Number(qtyStr)));
+    if (!Number.isFinite(qty)) return;
+    setInvSavingId(variationId);
+    const { error } = await supabase
+      .from('store_inventory')
+      .upsert({ store_id: invStoreId, variation_id: variationId, quantity: qty }, { onConflict: 'store_id,variation_id' });
+    if (!error) {
+      setInvRows(prev => ({ ...prev, [variationId]: qty }));
+      setInvDrafts(prev => { const next = { ...prev }; delete next[variationId]; return next; });
+    }
+    setInvSavingId(null);
+  };
+
+  const untrackInventory = async (variationId: string) => {
+    setInvSavingId(variationId);
+    const { error } = await supabase.from('store_inventory').delete().eq('store_id', invStoreId).eq('variation_id', variationId);
+    if (!error) {
+      setInvRows(prev => { const next = { ...prev }; delete next[variationId]; return next; });
+    }
+    setInvSavingId(null);
   };
 
   const syncCatalog = async () => {
@@ -614,6 +665,7 @@ export default function AdminDashboardPage() {
     { id: 'catalog', label: 'Catalogue', icon: <RefreshCw className="h-4 w-4" /> },
     { id: 'categories', label: 'Categories', icon: <Tag className="h-4 w-4" /> },
     { id: 'products', label: 'Product Photos', icon: <Camera className="h-4 w-4" /> },
+    { id: 'inventory', label: 'Inventory', icon: <Boxes className="h-4 w-4" /> },
     { id: 'promos', label: 'Promotions', icon: <Megaphone className="h-4 w-4" /> },
   ];
 
@@ -672,7 +724,7 @@ export default function AdminDashboardPage() {
               <div className="space-y-4">
                 <div className="flex justify-end">
                   <button
-                    onClick={() => setStoreForm({ name: '', address: '', square_location_id: '', pickup_enabled: true, delivery_enabled: false, delivery_radius_km: 10 } as any)}
+                    onClick={() => setStoreForm({ name: '', address: '', square_location_id: '', pickup_enabled: true, delivery_enabled: false, delivery_radius_km: 10, delivery_fee_cents: 0 } as any)}
                     className="flex items-center gap-2 px-4 py-2 bg-tpl-forest text-white rounded-xl text-sm font-semibold hover:bg-tpl-mid transition-colors"
                   >
                     <Plus className="h-4 w-4" /> Add Store
@@ -687,6 +739,18 @@ export default function AdminDashboardPage() {
                       <input value={storeForm.address ?? ''} onChange={e => setStoreForm(f => ({ ...f!, address: e.target.value }))} placeholder="Address" className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
                       <input value={storeForm.square_location_id ?? ''} onChange={e => setStoreForm(f => ({ ...f!, square_location_id: e.target.value }))} placeholder="Square Location ID" className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
                       <input type="number" value={storeForm.delivery_radius_km ?? 10} onChange={e => setStoreForm(f => ({ ...f!, delivery_radius_km: parseFloat(e.target.value) }))} placeholder="Delivery radius (km)" className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
+                      <div>
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.5}
+                          value={((storeForm.delivery_fee_cents ?? 0) / 100).toString()}
+                          onChange={e => setStoreForm(f => ({ ...f!, delivery_fee_cents: Math.round((parseFloat(e.target.value) || 0) * 100) }))}
+                          placeholder="Delivery fee ($)"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">Charged as a line item on delivery orders. 0 = free delivery.</p>
+                      </div>
                       <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                         <input type="checkbox" checked={!!storeForm.pickup_enabled} onChange={e => setStoreForm(f => ({ ...f!, pickup_enabled: e.target.checked }))} className="rounded" />
                         Pickup enabled
@@ -714,7 +778,11 @@ export default function AdminDashboardPage() {
                         <p className="text-xs text-gray-400 font-mono mt-1">{store.square_location_id}</p>
                         <div className="flex gap-2 mt-2">
                           {store.pickup_enabled && <span className="text-xs bg-tpl-pale text-tpl-forest px-2 py-0.5 rounded-full font-medium">Pickup</span>}
-                          {store.delivery_enabled && <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Delivery ({store.delivery_radius_km}km)</span>}
+                          {store.delivery_enabled && (
+                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                              Delivery ({store.delivery_radius_km}km · {store.delivery_fee_cents > 0 ? formatPrice(store.delivery_fee_cents) : 'free'})
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2 flex-shrink-0">
@@ -1578,6 +1646,104 @@ export default function AdminDashboardPage() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* INVENTORY TAB */}
+            {tab === 'inventory' && (
+              <div className="space-y-4">
+                <div className="bg-white rounded-2xl shadow-card p-6">
+                  <h2 className="font-semibold text-tpl-dark text-lg mb-1">Stock by Store</h2>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Set a quantity to start tracking stock for a variation at this store — it'll show as limited/out of stock on the storefront and be checked at checkout.
+                    Untracked variations stay shown as always available, same as today.
+                  </p>
+                  <div className="flex flex-wrap gap-3 items-center">
+                    <select
+                      value={invStoreId}
+                      onChange={e => setInvStoreId(e.target.value)}
+                      className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime bg-white"
+                    >
+                      {stores.length === 0 && <option value="">No stores yet</option>}
+                      {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                    <div className="relative flex-1 min-w-[200px]">
+                      <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        value={invSearch}
+                        onChange={e => setInvSearch(e.target.value)}
+                        placeholder="Search products…"
+                        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {!invStoreId ? (
+                  <div className="bg-white rounded-2xl shadow-card p-12 text-center">
+                    <Boxes className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                    <p className="text-gray-500">Add a store first, then come back to set stock levels.</p>
+                  </div>
+                ) : invLoading ? (
+                  <div className="flex justify-center py-16"><LoadingSpinner size="lg" /></div>
+                ) : (
+                  <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+                    <div className="divide-y divide-gray-100">
+                      {invProducts
+                        .filter(p => !invSearch || p.name.toLowerCase().includes(invSearch.toLowerCase()))
+                        .map(product => (
+                          <div key={product.id} className="p-4">
+                            <p className="text-sm font-semibold text-tpl-dark mb-2">{product.name}</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                              {(product.variations ?? []).map(v => {
+                                const tracked = Object.prototype.hasOwnProperty.call(invRows, v.id);
+                                const currentQty = invRows[v.id];
+                                const draft = invDrafts[v.id];
+                                const saving = invSavingId === v.id;
+                                return (
+                                  <div key={v.id} className="flex items-center gap-2 bg-tpl-cream rounded-xl px-3 py-2">
+                                    <span className="text-xs text-gray-600 flex-1 truncate">{v.name}</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={draft !== undefined ? draft : (tracked ? String(currentQty) : '')}
+                                      onChange={e => setInvDrafts(prev => ({ ...prev, [v.id]: e.target.value }))}
+                                      placeholder="∞"
+                                      className="w-16 px-2 py-1 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-tpl-lime"
+                                    />
+                                    <button
+                                      onClick={() => saveInventoryQty(v.id, draft !== undefined ? draft : String(currentQty ?? 0))}
+                                      disabled={saving || draft === undefined}
+                                      title="Save quantity"
+                                      className="text-xs px-2 py-1 bg-tpl-forest text-white rounded-lg font-medium hover:bg-tpl-mid transition-colors disabled:opacity-30"
+                                    >
+                                      {saving ? '…' : 'Save'}
+                                    </button>
+                                    {tracked && (
+                                      <button
+                                        onClick={() => untrackInventory(v.id)}
+                                        disabled={saving}
+                                        title="Stop tracking — treat as always available"
+                                        className="text-xs px-2 py-1 text-gray-400 hover:text-red-500 transition-colors"
+                                      >
+                                        <X className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                              {(product.variations ?? []).length === 0 && (
+                                <span className="text-xs text-gray-400 italic">No variations</span>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      {invProducts.length === 0 && (
+                        <p className="text-sm text-gray-400 text-center py-10">No products found.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

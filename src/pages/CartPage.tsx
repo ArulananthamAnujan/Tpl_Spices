@@ -4,7 +4,7 @@ import { useCart } from '../contexts/CartContext';
 import { formatPrice } from '../lib/types';
 
 export default function CartPage() {
-  const { items, store, removeItem, updateQty, totalCents, itemCount } = useCart();
+  const { items, store, removeItem, updateQty, totalCents } = useCart();
   const navigate = useNavigate();
 
   if (items.length === 0) {

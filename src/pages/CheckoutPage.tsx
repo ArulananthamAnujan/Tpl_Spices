@@ -7,11 +7,34 @@ import { supabase } from '../lib/supabase';
 import { FulfillmentType, DeliveryAddress, formatPrice } from '../lib/types';
 import LoadingSpinner from '../components/LoadingSpinner';
 
-declare const Square: any;
+const SQUARE_ENV = import.meta.env.VITE_SQUARE_ENV === 'production' ? 'production' : 'sandbox';
+const SQUARE_SDK_URL = SQUARE_ENV === 'production'
+  ? 'https://web.squarecdn.com/v1/square.js'
+  : 'https://sandbox.web.squarecdn.com/v1/square.js';
+
+function loadSquareSdk(): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if ((window as any).Square) { resolve((window as any).Square); return; }
+    const existing = document.querySelector(`script[src="${SQUARE_SDK_URL}"]`) as HTMLScriptElement | null;
+    const onLoad = () => (window as any).Square ? resolve((window as any).Square) : reject(new Error('Square SDK loaded but is unavailable.'));
+    const onError = () => reject(new Error('Square SDK failed to load.'));
+    if (existing) {
+      existing.addEventListener('load', onLoad, { once: true });
+      existing.addEventListener('error', onError, { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = SQUARE_SDK_URL;
+    script.async = true;
+    script.addEventListener('load', onLoad, { once: true });
+    script.addEventListener('error', onError, { once: true });
+    document.head.appendChild(script);
+  });
+}
 
 export default function CheckoutPage() {
   const { items, store, totalCents, clearCart } = useCart();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>('PICKUP');
@@ -26,6 +49,9 @@ export default function CheckoutPage() {
   const cardRef = useRef<any>(null);
   const paymentsRef = useRef<any>(null);
 
+  const deliveryFeeCents = fulfillmentType === 'DELIVERY' ? (store?.delivery_fee_cents ?? 0) : 0;
+  const grandTotalCents = totalCents + deliveryFeeCents;
+
   useEffect(() => {
     if (items.length === 0) { navigate('/cart'); return; }
     if (!user) { navigate('/auth'); return; }
@@ -33,11 +59,15 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (!store || !items.length) return;
+    const appId = import.meta.env.VITE_SQUARE_APP_ID as string | undefined;
+    if (!appId) {
+      setCardError(`Payments aren't configured yet — set VITE_SQUARE_APP_ID (currently running in ${SQUARE_ENV} mode).`);
+      return;
+    }
     const init = async () => {
       try {
-        if (typeof Square === 'undefined') { setCardError('Square SDK failed to load. Please refresh.'); return; }
-        const appId = import.meta.env.VITE_SQUARE_APP_ID || 'sandbox-sq0idb-PLACEHOLDER';
-        const payments = Square.payments(appId, store.square_location_id);
+        const SquareSdk = await loadSquareSdk();
+        const payments = SquareSdk.payments(appId, store.square_location_id);
         paymentsRef.current = payments;
         const card = await payments.card();
         await card.attach('#card-container');
@@ -83,7 +113,7 @@ export default function CheckoutPage() {
           body: JSON.stringify({
             store_id: store.id,
             fulfillment_type: fulfillmentType,
-            items: items.map(i => ({ variation_id: i.variation_id, qty: i.quantity, unit_price_cents: i.price_cents, name_snapshot: `${i.product_name} – ${i.variation_name}` })),
+            items: items.map(i => ({ variation_id: i.variation_id, qty: i.quantity, name_snapshot: `${i.product_name} – ${i.variation_name}` })),
             delivery_address: fulfillmentType === 'DELIVERY' ? deliveryAddress : null,
             scheduled_time: scheduledTime || null,
             notes: notes || null,
@@ -258,12 +288,13 @@ export default function CheckoutPage() {
                   </div>
                   {fulfillmentType === 'DELIVERY' && (
                     <div className="flex justify-between text-sm text-gray-500">
-                      <span>Delivery</span><span className="text-tpl-forest">TBC</span>
+                      <span>Delivery</span>
+                      <span className="text-tpl-forest">{deliveryFeeCents > 0 ? formatPrice(deliveryFeeCents) : 'Free'}</span>
                     </div>
                   )}
                   <div className="flex justify-between font-bold text-tpl-dark border-t border-gray-100 pt-2">
                     <span>Total</span>
-                    <span className="text-tpl-forest text-lg">{formatPrice(totalCents)}</span>
+                    <span className="text-tpl-forest text-lg">{formatPrice(grandTotalCents)}</span>
                   </div>
                 </div>
                 <button
@@ -271,7 +302,7 @@ export default function CheckoutPage() {
                   disabled={submitting || !squareReady}
                   className="mt-6 w-full py-3.5 bg-tpl-forest text-white font-semibold rounded-xl hover:bg-tpl-mid transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  {submitting ? <><LoadingSpinner size="sm" light /><span>Processing…</span></> : `Pay ${formatPrice(totalCents)}`}
+                  {submitting ? <><LoadingSpinner size="sm" light /><span>Processing…</span></> : `Pay ${formatPrice(grandTotalCents)}`}
                 </button>
                 <p className="text-xs text-gray-400 text-center mt-3">
                   Powered by Square. Your card details are encrypted and secure.

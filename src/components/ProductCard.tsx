@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 interface Props {
   product: Product;
   store: Store | null;
+  stock?: Record<string, number>;
   onClick?: () => void;
 }
 
@@ -20,7 +21,7 @@ const PLACEHOLDER_COLORS = [
   'from-tpl-pale to-tpl-cream',
 ];
 
-export default function ProductCard({ product, store, onClick }: Props) {
+export default function ProductCard({ product, store, stock, onClick }: Props) {
   const { addItem } = useCart();
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
@@ -29,10 +30,14 @@ export default function ProductCard({ product, store, onClick }: Props) {
   const defaultVariation: ProductVariation | undefined = variations[0];
   const price = defaultVariation?.price_cents;
 
+  const trackedQty = defaultVariation && stock ? stock[defaultVariation.id] : undefined;
+  const outOfStock = trackedQty !== undefined && trackedQty <= 0;
+  const lowStock = trackedQty !== undefined && trackedQty > 0 && trackedQty <= 5;
+
   const handleAdd = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!store) { navigate('/'); return; }
-    if (!defaultVariation) return;
+    if (!defaultVariation || outOfStock) return;
     setAdding(true);
     addItem({
       variation_id: defaultVariation.id,
@@ -77,6 +82,11 @@ export default function ProductCard({ product, store, onClick }: Props) {
             {product.category.name}
           </span>
         )}
+        {outOfStock && (
+          <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+            <span className="bg-tpl-dark text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">Out of Stock</span>
+          </div>
+        )}
       </div>
 
       {/* Info */}
@@ -104,8 +114,11 @@ export default function ProductCard({ product, store, onClick }: Props) {
             {defaultVariation && (
               <p className="text-xs text-gray-400">{defaultVariation.name}</p>
             )}
+            {lowStock && (
+              <p className="text-xs text-tpl-amber font-medium mt-0.5">Only {trackedQty} left</p>
+            )}
           </div>
-          {store && defaultVariation && (
+          {store && defaultVariation && !outOfStock && (
             <button
               onClick={handleAdd}
               className={`p-2 rounded-xl transition-all duration-300 ${adding ? 'bg-tpl-lime text-tpl-dark scale-110' : 'bg-tpl-forest text-white hover:bg-tpl-mid'}`}

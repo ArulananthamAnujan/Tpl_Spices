@@ -58,7 +58,7 @@ export default function PromoCarousel() {
   const handleTouchEnd = () => {
     if (touchStartX.current === null || touchEndX.current === null) return;
     const diff = touchStartX.current - touchEndX.current;
-    if (Math.abs(diff) > 40) diff > 0 ? next() : prev();
+    if (Math.abs(diff) > 40) { if (diff > 0) next(); else prev(); }
     touchStartX.current = null;
     touchEndX.current = null;
   };
@@ -84,8 +84,6 @@ export default function PromoCarousel() {
       </div>
     );
   }
-
-  const slide = slides[current];
 
   return (
     <div

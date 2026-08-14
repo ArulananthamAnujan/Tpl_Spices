@@ -9,9 +9,14 @@ import ProductDetailPage from './pages/ProductDetailPage';
 import CartPage from './pages/CartPage';
 import CheckoutPage from './pages/CheckoutPage';
 import AuthPage from './pages/AuthPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import AccountPage from './pages/AccountPage';
 import StaffDashboardPage from './pages/StaffDashboardPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
+import AboutPage from './pages/AboutPage';
+import TermsPage from './pages/TermsPage';
+import PrivacyPage from './pages/PrivacyPage';
+import RefundsPage from './pages/RefundsPage';
 
 function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -29,8 +34,9 @@ export default function App() {
       <AuthProvider>
         <CartProvider>
           <Routes>
-            {/* Public auth page — no header/footer */}
+            {/* Public auth pages — no header/footer */}
             <Route path="/auth" element={<AuthPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
 
             {/* All other pages wrapped in layout */}
             <Route
@@ -41,6 +47,10 @@ export default function App() {
                     <Route path="/" element={<StorefrontPage />} />
                     <Route path="/product/:id" element={<ProductDetailPage />} />
                     <Route path="/cart" element={<CartPage />} />
+                    <Route path="/about" element={<AboutPage />} />
+                    <Route path="/terms" element={<TermsPage />} />
+                    <Route path="/privacy" element={<PrivacyPage />} />
+                    <Route path="/refunds" element={<RefundsPage />} />
                     <Route
                       path="/checkout"
                       element={

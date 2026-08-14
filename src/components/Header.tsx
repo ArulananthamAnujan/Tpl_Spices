@@ -48,6 +48,8 @@ export default function Header() {
   const isActive = (path: string) => location.pathname === path;
 
   const brands = categories.filter(c => c.is_brand);
+  const groceryCategories = categories.filter(c => c.section === 'grocery' && !c.is_brand);
+  const clothingCategories = categories.filter(c => c.section === 'clothing' && !c.is_brand);
 
   return (
     <header className="sticky top-0 z-50 shadow-lg">
@@ -58,7 +60,7 @@ export default function Header() {
             {/* Logo */}
             <Link to="/" className="flex items-center gap-3 flex-shrink-0">
               <img
-                src="/WhatsApp_Image_2026-05-09_at_8.58.20_AM_(1).jpeg"
+                src="/logo.jpg"
                 alt="TPL Spices"
                 className="h-10 w-10 rounded-full object-cover ring-2 ring-tpl-lime/50"
               />
@@ -205,6 +207,13 @@ export default function Header() {
               Promotions
             </Link>
 
+            <Link
+              to="/about"
+              className="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors h-9 flex items-center text-white/80 hover:text-white hover:bg-white/15"
+            >
+              About
+            </Link>
+
             {brands.length > 0 && (
               <Link
                 to="/?brands=1"
@@ -250,6 +259,7 @@ export default function Header() {
             </Link>
           ))}
           <Link to="/?promo=1" onClick={() => setMenuOpen(false)} className="block px-3 py-2 text-white/80 hover:text-white rounded-lg text-sm">Promotions</Link>
+          <Link to="/about" onClick={() => setMenuOpen(false)} className="block px-3 py-2 text-white/80 hover:text-white rounded-lg text-sm">About</Link>
           {profile?.role === 'super_admin' && (
             <Link to="/admin" onClick={() => setMenuOpen(false)} className="block px-3 py-2 text-white/80 hover:text-white rounded-lg text-sm">Admin Dashboard</Link>
           )}
