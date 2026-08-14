@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Search as SearchIcon, Boxes, PackagePlus, Clock, History as HistoryIcon,
-  Loader2, X, Check, ChevronDown, Layers, AlertTriangle,
+  Loader2, X, Check, ChevronDown, Layers, AlertTriangle, TrendingUp, TrendingDown,
+  BarChart3, Download,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Store, Category, Product, ProductVariation } from '../lib/types';
@@ -41,6 +42,9 @@ function computeAging(moves: InvMove[]) {
 
 const UNCAT = '__uncat__';
 
+const MONTH_FMT = (d: Date) => d.toLocaleString('en-AU', { month: 'long', year: 'numeric' });
+const monthKey = (iso: string) => iso.slice(0, 7); // YYYY-MM
+
 export default function InventoryPanel() {
   const [stores, setStores] = useState<Store[]>([]);
   const [storeId, setStoreId] = useState('');
@@ -52,6 +56,8 @@ export default function InventoryPanel() {
   const [stockLoading, setStockLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
 
+  const [mode, setMode] = useState<'stock' | 'report'>('stock');
+  const [reportMonth, setReportMonth] = useState('all');
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState<string>('all');
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -64,7 +70,7 @@ export default function InventoryPanel() {
   const [bulkQty, setBulkQty] = useState('');
   const [bulkDate, setBulkDate] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [toast, setToast] = useState('');
+  const [toast, setToast] = useState<{ msg: string; bad?: boolean } | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -101,9 +107,9 @@ export default function InventoryPanel() {
   }, []);
 
   useEffect(() => { if (storeId) loadStock(storeId); }, [storeId, loadStock]);
-  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(''), 3000); return () => clearTimeout(t); }, [toast]);
+  useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), toast.bad ? 12000 : 3000); return () => clearTimeout(t); }, [toast]);
 
-  const flash = (msg: string) => setToast(msg);
+  const flash = (msg: string, bad = false) => setToast({ msg, bad });
 
   // ---- filtering + grouping by category ----
   const term = search.trim().toLowerCase();
@@ -143,16 +149,16 @@ export default function InventoryPanel() {
     if (delta === 0) { setDrafts(p => { const n = { ...p }; delete n[v.id]; return n; }); return; }
     setSavingId(v.id);
     const { error } = await recordMovement(v.id, delta, 'adjustment', null, `Set quantity to ${qty}`);
-    if (error) flash(error.message); else await loadStock(storeId);
+    if (error) flash(error.message, true); else await loadStock(storeId);
     setSavingId(null);
   };
 
   const addStock = async (v: ProductVariation) => {
     const qty = Math.floor(Number(addQty));
-    if (!Number.isFinite(qty) || qty <= 0) { flash('Enter a quantity greater than 0.'); return; }
+    if (!Number.isFinite(qty) || qty <= 0) { flash('Enter a quantity greater than 0.', true); return; }
     setSavingId(v.id);
     const { error } = await recordMovement(v.id, qty, 'received', addDate ? new Date(addDate).toISOString() : null, addNote || null);
-    if (error) flash(error.message);
+    if (error) flash(error.message, true);
     else { setAddQty(''); setAddDate(''); setAddNote(''); await loadStock(storeId); }
     setSavingId(null);
   };
@@ -165,9 +171,9 @@ export default function InventoryPanel() {
   };
 
   const applyBulk = async () => {
-    if (selected.size === 0) { flash('Select some items first.'); return; }
+    if (selected.size === 0) { flash('Select some items first.', true); return; }
     const qty = Math.floor(Number(bulkQty));
-    if (!Number.isFinite(qty) || qty < 0 || (bulkMode === 'add' && qty <= 0)) { flash('Enter a valid quantity.'); return; }
+    if (!Number.isFinite(qty) || qty < 0 || (bulkMode === 'add' && qty <= 0)) { flash('Enter a valid quantity.', true); return; }
     setBulkBusy(true);
     let ok = 0, failed = 0;
     for (const vid of selected) {
@@ -200,15 +206,105 @@ export default function InventoryPanel() {
   const lowCount = visibleVarIds.filter(id => rows[id] !== undefined && rows[id] > 0 && rows[id] <= 5).length;
   const outCount = visibleVarIds.filter(id => rows[id] !== undefined && rows[id] <= 0).length;
 
+  // ---------------- Reporting: in / out per month, per item ----------------
+  const allMoves: InvMove[] = Object.values(moves).flat();
+  const monthKeys = [...new Set(allMoves.map(m => monthKey(m.created_at)))].sort().reverse();
+
+  // Name lookup for every variation on screen.
+  const nameFor = (variationId: string) => {
+    for (const p of products) {
+      const v = (p.variations ?? []).find(x => x.id === variationId);
+      if (v) return { product: p.name, variation: v.name, categoryId: p.category_id };
+    }
+    return { product: 'Unknown item', variation: '', categoryId: null as string | null };
+  };
+
+  const inPeriod = (m: InvMove) => reportMonth === 'all' || monthKey(m.created_at) === reportMonth;
+
+  // Respect the category filter in the report too.
+  const catAllows = (categoryId: string | null) => {
+    if (catFilter === 'all') return true;
+    if (catFilter === UNCAT) return !categoryId;
+    const childIds = categories.filter(c => c.parent_id === catFilter).map(c => c.id);
+    return categoryId === catFilter || childIds.includes(categoryId ?? '');
+  };
+
+  const reportMoves = allMoves.filter(m => inPeriod(m) && catAllows(nameFor(m.variation_id).categoryId));
+
+  const totals = reportMoves.reduce(
+    (acc, m) => {
+      if (m.reason === 'sale') acc.sold += -m.delta;
+      else if (m.reason === 'received' || m.reason === 'initial') acc.received += m.delta;
+      else acc.adjusted += m.delta;
+      return acc;
+    },
+    { received: 0, sold: 0, adjusted: 0 },
+  );
+
+  // Per-month rollup (always across the whole ledger, so trends stay visible).
+  const byMonth = new Map<string, { received: number; sold: number; adjusted: number }>();
+  for (const m of allMoves) {
+    if (!catAllows(nameFor(m.variation_id).categoryId)) continue;
+    const k = monthKey(m.created_at);
+    const row = byMonth.get(k) ?? { received: 0, sold: 0, adjusted: 0 };
+    if (m.reason === 'sale') row.sold += -m.delta;
+    else if (m.reason === 'received' || m.reason === 'initial') row.received += m.delta;
+    else row.adjusted += m.delta;
+    byMonth.set(k, row);
+  }
+  const monthRows = [...byMonth.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+
+  // Per-item rollup for the selected period.
+  const byItem = new Map<string, { received: number; sold: number; adjusted: number }>();
+  for (const m of reportMoves) {
+    const row = byItem.get(m.variation_id) ?? { received: 0, sold: 0, adjusted: 0 };
+    if (m.reason === 'sale') row.sold += -m.delta;
+    else if (m.reason === 'received' || m.reason === 'initial') row.received += m.delta;
+    else row.adjusted += m.delta;
+    byItem.set(m.variation_id, row);
+  }
+  const itemRows = [...byItem.entries()]
+    .map(([vid, r]) => ({ vid, ...r, ...nameFor(vid), stock: rows[vid] ?? 0 }))
+    .filter(r => !term || r.product.toLowerCase().includes(term))
+    .sort((a, b) => b.sold - a.sold || b.received - a.received);
+
+  const exportCsv = () => {
+    const header = ['Product', 'Variation', 'Received', 'Sold', 'Adjusted', 'Current stock'];
+    const lines = itemRows.map(r => [r.product, r.variation, r.received, r.sold, r.adjusted, r.stock]);
+    const csv = [header, ...lines]
+      .map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `inventory-report-${reportMonth === 'all' ? 'all-time' : reportMonth}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-4 pb-28">
       {/* Toolbar */}
       <div className="bg-white rounded-2xl shadow-card p-5">
-        <h2 className="font-semibold text-tpl-dark text-lg mb-1 flex items-center gap-2">
-          <Boxes className="h-5 w-5 text-tpl-forest" /> Inventory
-        </h2>
+        <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
+          <h2 className="font-semibold text-tpl-dark text-lg flex items-center gap-2">
+            <Boxes className="h-5 w-5 text-tpl-forest" /> Inventory
+          </h2>
+          <div className="flex rounded-xl overflow-hidden border border-gray-200">
+            <button onClick={() => setMode('stock')}
+              className={`px-3.5 py-1.5 text-xs font-semibold transition-colors ${mode === 'stock' ? 'bg-tpl-forest text-white' : 'bg-white text-gray-500 hover:text-tpl-forest'}`}>
+              Stock levels
+            </button>
+            <button onClick={() => setMode('report')}
+              className={`px-3.5 py-1.5 text-xs font-semibold transition-colors flex items-center gap-1.5 ${mode === 'report' ? 'bg-tpl-forest text-white' : 'bg-white text-gray-500 hover:text-tpl-forest'}`}>
+              <BarChart3 className="h-3.5 w-3.5" /> History &amp; reports
+            </button>
+          </div>
+        </div>
         <p className="text-sm text-gray-500 mb-4">
-          Pick a store, filter by category, then update stock. <b>Tick items and use the bar at the bottom</b> to update many at once.
+          {mode === 'stock'
+            ? <>Pick a store, filter by category, then update stock. <b>Tick items and use the bar at the bottom</b> to update many at once.</>
+            : <>See how much stock came <b>in</b> and how much was <b>sold</b>, by month and by product.</>}
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -247,7 +343,7 @@ export default function InventoryPanel() {
           </label>
         </div>
 
-        {storeId && (
+        {storeId && mode === 'stock' && (
           <div className="flex flex-wrap gap-2 mt-3 text-xs">
             <span className="px-2.5 py-1 rounded-full bg-tpl-cream text-tpl-forest font-medium">{filtered.length} products</span>
             {lowCount > 0 && <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 font-medium flex items-center gap-1"><AlertTriangle className="h-3 w-3" />{lowCount} low</span>}
@@ -256,7 +352,11 @@ export default function InventoryPanel() {
         )}
       </div>
 
-      {toast && <div className="bg-tpl-dark text-white text-sm px-4 py-2 rounded-xl inline-block">{toast}</div>}
+      {toast && (
+        <div className={`text-sm px-4 py-2.5 rounded-xl ${toast.bad ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-tpl-dark text-white inline-block'}`}>
+          {toast.bad && <strong className="font-semibold">Couldn't save: </strong>}{toast.msg}
+        </div>
+      )}
 
       {!storeId ? (
         <div className="bg-white rounded-2xl shadow-card p-12 text-center">
@@ -265,6 +365,157 @@ export default function InventoryPanel() {
         </div>
       ) : stockLoading ? (
         <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-tpl-forest" /></div>
+      ) : mode === 'report' ? (
+        <div className="space-y-4">
+          {/* Period picker */}
+          <div className="bg-white rounded-2xl shadow-card p-5">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-[11px] font-medium text-gray-500">Period
+                <div className="relative mt-1">
+                  <select value={reportMonth} onChange={e => setReportMonth(e.target.value)}
+                    className="appearance-none pl-3 pr-9 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-tpl-lime">
+                    <option value="all">All time</option>
+                    {monthKeys.map(k => (
+                      <option key={k} value={k}>{MONTH_FMT(new Date(`${k}-01T00:00:00`))}</option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
+                </div>
+              </label>
+              <button onClick={exportCsv} disabled={itemRows.length === 0}
+                className="px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:border-tpl-forest hover:text-tpl-forest transition-colors disabled:opacity-40 flex items-center gap-1.5">
+                <Download className="h-4 w-4" /> Export CSV
+              </button>
+            </div>
+
+            {/* Totals */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+              <div className="rounded-xl bg-green-50 px-4 py-3">
+                <p className="text-[11px] uppercase tracking-wide text-green-700 flex items-center gap-1"><TrendingUp className="h-3 w-3" /> Stock in</p>
+                <p className="text-2xl font-bold text-green-700">{totals.received}</p>
+              </div>
+              <div className="rounded-xl bg-red-50 px-4 py-3">
+                <p className="text-[11px] uppercase tracking-wide text-red-700 flex items-center gap-1"><TrendingDown className="h-3 w-3" /> Sold</p>
+                <p className="text-2xl font-bold text-red-700">{totals.sold}</p>
+              </div>
+              <div className="rounded-xl bg-amber-50 px-4 py-3">
+                <p className="text-[11px] uppercase tracking-wide text-amber-700">Adjustments</p>
+                <p className="text-2xl font-bold text-amber-700">{totals.adjusted > 0 ? `+${totals.adjusted}` : totals.adjusted}</p>
+              </div>
+              <div className="rounded-xl bg-tpl-cream px-4 py-3">
+                <p className="text-[11px] uppercase tracking-wide text-gray-500">Net change</p>
+                <p className="text-2xl font-bold text-tpl-dark">{totals.received + totals.adjusted - totals.sold}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* By month */}
+          <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+            <div className="px-5 py-3 bg-tpl-cream/50 border-b border-gray-100">
+              <h3 className="font-semibold text-tpl-dark text-sm">Month by month</h3>
+            </div>
+            {monthRows.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-8">No stock movements recorded yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[11px] uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                      <th className="text-left font-medium px-5 py-2">Month</th>
+                      <th className="text-right font-medium px-3 py-2">Stock in</th>
+                      <th className="text-right font-medium px-3 py-2">Sold</th>
+                      <th className="text-right font-medium px-3 py-2">Adjusted</th>
+                      <th className="text-right font-medium px-5 py-2">Net</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {monthRows.map(([k, r]) => (
+                      <tr key={k} className={`hover:bg-gray-50 cursor-pointer ${reportMonth === k ? 'bg-tpl-pale/40' : ''}`}
+                        onClick={() => setReportMonth(reportMonth === k ? 'all' : k)}>
+                        <td className="px-5 py-2.5 font-medium text-tpl-dark">{MONTH_FMT(new Date(`${k}-01T00:00:00`))}</td>
+                        <td className="px-3 py-2.5 text-right text-green-700 font-semibold">{r.received || '—'}</td>
+                        <td className="px-3 py-2.5 text-right text-red-600 font-semibold">{r.sold || '—'}</td>
+                        <td className="px-3 py-2.5 text-right text-amber-700">{r.adjusted ? (r.adjusted > 0 ? `+${r.adjusted}` : r.adjusted) : '—'}</td>
+                        <td className="px-5 py-2.5 text-right font-bold text-tpl-dark">{r.received + r.adjusted - r.sold}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* By product */}
+          <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+            <div className="px-5 py-3 bg-tpl-cream/50 border-b border-gray-100">
+              <h3 className="font-semibold text-tpl-dark text-sm">
+                By product {reportMonth !== 'all' && <span className="text-gray-400 font-normal">· {MONTH_FMT(new Date(`${reportMonth}-01T00:00:00`))}</span>}
+              </h3>
+            </div>
+            {itemRows.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-8">Nothing recorded for this period.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-[11px] uppercase tracking-wide text-gray-400 border-b border-gray-100">
+                      <th className="text-left font-medium px-5 py-2">Product</th>
+                      <th className="text-right font-medium px-3 py-2">Stock in</th>
+                      <th className="text-right font-medium px-3 py-2">Sold</th>
+                      <th className="text-right font-medium px-5 py-2">In stock now</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {itemRows.map(r => (
+                      <tr key={r.vid} className="hover:bg-gray-50">
+                        <td className="px-5 py-2.5">
+                          <span className="font-medium text-tpl-dark">{r.product}</span>
+                          {r.variation && <span className="text-gray-400 text-xs"> · {r.variation}</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-right text-green-700 font-semibold">{r.received || '—'}</td>
+                        <td className="px-3 py-2.5 text-right text-red-600 font-semibold">{r.sold || '—'}</td>
+                        <td className="px-5 py-2.5 text-right font-bold text-tpl-dark">{r.stock}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Full log */}
+          <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+            <div className="px-5 py-3 bg-tpl-cream/50 border-b border-gray-100">
+              <h3 className="font-semibold text-tpl-dark text-sm">Every movement</h3>
+            </div>
+            {reportMoves.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-8">Nothing recorded for this period.</p>
+            ) : (
+              <div className="max-h-96 overflow-y-auto divide-y divide-gray-50">
+                {[...reportMoves].sort((a, b) => b.created_at.localeCompare(a.created_at)).map(m => {
+                  const n = nameFor(m.variation_id);
+                  return (
+                    <div key={m.id} className="flex items-center gap-3 px-5 py-2 text-xs">
+                      <span className={`font-bold w-12 text-right ${m.delta > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {m.delta > 0 ? `+${m.delta}` : m.delta}
+                      </span>
+                      <span className="flex-1 min-w-0">
+                        <span className="font-medium text-tpl-dark">{n.product}</span>
+                        {n.variation && <span className="text-gray-400"> · {n.variation}</span>}
+                        <span className="text-gray-400"> — {REASON_LABEL[m.reason] ?? m.reason}</span>
+                        {m.note && <span className="text-gray-400"> · {m.note}</span>}
+                      </span>
+                      <span className="text-gray-400 whitespace-nowrap">
+                        {new Date(m.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {m.creator?.full_name ? ` · ${m.creator.full_name}` : ''}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
       ) : (
         <div className="space-y-4">
           {[...groups.entries()].map(([key, group]) => {
