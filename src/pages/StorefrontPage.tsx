@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, ChevronDown, MapPin, Loader2, SlidersHorizontal, X, Salad, Shirt } from 'lucide-react';
+import { Search, ChevronDown, MapPin, Loader2, SlidersHorizontal, X, Salad, Shirt, Tag } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Store, Category, Product } from '../lib/types';
 import ProductCard from '../components/ProductCard';
@@ -25,16 +25,19 @@ export default function StorefrontPage() {
   const [storeDropOpen, setStoreDropOpen] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
+  const [showBrands, setShowBrands] = useState(false);
 
   // Sync state from URL params
   useEffect(() => {
     const cat = searchParams.get('category');
     const sec = searchParams.get('section') as Section | null;
     const search = searchParams.get('search');
+    const brands = searchParams.get('brands');
 
     if (sec === 'grocery' || sec === 'clothing') setSection(sec);
     setSelectedCategory(cat ?? null);
     if (search) setSearchQuery(search);
+    setShowBrands(brands === '1');
   }, [searchParams]);
 
   useEffect(() => {
@@ -141,6 +144,20 @@ export default function StorefrontPage() {
     });
   };
 
+  const selectBrandCategory = (cat: Category) => {
+    setSection(cat.section);
+    setSelectedCategory(null);
+    setSelectedBrand(cat.name);
+    setSearchParams(prev => {
+      const p = new URLSearchParams(prev);
+      p.set('section', cat.section);
+      p.delete('category');
+      p.delete('brands');
+      return p;
+    });
+  };
+
+  const brandCategories = categories.filter(c => c.is_brand);
   const sidebarCategories = categories.filter(c => c.section === section && !c.is_brand);
 
   const sectionLabel = section === 'grocery' ? 'Grocery & Spices' : 'Clothing';
@@ -222,6 +239,42 @@ export default function StorefrontPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {showBrands ? (
+          <>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="font-display text-2xl font-bold text-tpl-dark">Shop by Brand</h2>
+              <button
+                onClick={() => setSearchParams(prev => { const p = new URLSearchParams(prev); p.delete('brands'); return p; })}
+                className="flex items-center gap-1.5 text-sm text-tpl-forest hover:text-tpl-mid font-medium transition-colors"
+              >
+                <X className="h-3.5 w-3.5" /> Close
+              </button>
+            </div>
+            {brandCategories.length === 0 ? (
+              <div className="bg-white rounded-2xl shadow-card p-12 text-center">
+                <Tag className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">No brands yet</h3>
+                <p className="text-sm text-gray-500">Brands will show up here once they're marked in Admin → Categories.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                {brandCategories.map(cat => (
+                  <button
+                    key={cat.id}
+                    onClick={() => selectBrandCategory(cat)}
+                    className="bg-white rounded-2xl shadow-card hover:shadow-card-hover transition-all p-6 text-center group"
+                  >
+                    {cat.section === 'grocery'
+                      ? <Salad className="h-6 w-6 text-tpl-forest/60 mx-auto mb-3 group-hover:text-tpl-forest transition-colors" />
+                      : <Shirt className="h-6 w-6 text-tpl-forest/60 mx-auto mb-3 group-hover:text-tpl-forest transition-colors" />}
+                    <p className="font-semibold text-tpl-dark text-sm">{cat.name}</p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+        <>
         {/* Search + Filter */}
         <div className="flex items-center gap-3 mb-6">
           <div className="relative flex-1">
@@ -353,6 +406,8 @@ export default function StorefrontPage() {
             )}
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

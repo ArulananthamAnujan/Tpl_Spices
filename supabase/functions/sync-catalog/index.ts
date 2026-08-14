@@ -130,22 +130,38 @@ Deno.serve(async (req: Request) => {
       catCount = cats.length;
     }
 
-    const { data: dbCats } = await supabaseAdmin.from("categories").select("id, square_id");
+    const { data: dbCats } = await supabaseAdmin.from("categories").select("id, square_id, is_brand");
     const catMap: Record<string, string> = {};
-    for (const c of dbCats ?? []) catMap[c.square_id] = c.id;
+    const catBrandById: Record<string, boolean> = {};
+    const catNameById: Record<string, string> = {};
+    for (const c of dbCats ?? []) {
+      catMap[c.square_id] = c.id;
+      catBrandById[c.id] = c.is_brand;
+    }
+    for (const c of squareCategories) catNameById[catMap[c.id] ?? ""] = c.category_data?.name ?? "";
 
-    // Upsert products
+    // Upsert products. Square items can carry more than one category (e.g. a
+    // "type" category like Spices plus a "brand" category like MTR) — walk the
+    // full list and split it using whichever of our categories are flagged
+    // is_brand, rather than only ever reading the first one.
     let prodCount = 0;
     if (squareItems.length > 0) {
       const prods = squareItems.map(item => {
         const itemData = item.item_data ?? {};
-        const categorySquareId = itemData.category_id ?? itemData.categories?.[0]?.id ?? null;
+        const squareCategoryIds: string[] = [
+          ...(itemData.category_id ? [itemData.category_id] : []),
+          ...((itemData.categories ?? []).map((c: any) => c.id).filter(Boolean)),
+        ];
+        const dbCategoryIds = [...new Set(squareCategoryIds.map(id => catMap[id]).filter(Boolean))] as string[];
+        const typeCategoryId = dbCategoryIds.find(id => !catBrandById[id]) ?? null;
+        const brandCategoryId = dbCategoryIds.find(id => catBrandById[id]) ?? null;
         const imageId = item.image_ids?.[0] ?? itemData.image_ids?.[0] ?? null;
         return {
           square_item_id: item.id,
           name: itemData.name ?? "Unknown",
           description: itemData.description ?? null,
-          category_id: categorySquareId ? (catMap[categorySquareId] ?? null) : null,
+          category_id: typeCategoryId,
+          brand: brandCategoryId ? (catNameById[brandCategoryId] || null) : null,
           image_url: imageId ? (imageMap[imageId] ?? null) : null,
           active: !item.is_deleted,
         };

@@ -32,6 +32,9 @@ export default function AdminDashboardPage() {
   const [slides, setSlides] = useState<PromoSlide[]>([]);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [savingCatId, setSavingCatId] = useState<string | null>(null);
+  const [catForm, setCatForm] = useState<Partial<Category> | null>(null);
+  const [savingCat, setSavingCat] = useState(false);
+  const [catError, setCatError] = useState('');
 
   // Products image management
   const [products, setProducts] = useState<Product[]>([]);
@@ -586,6 +589,60 @@ export default function AdminDashboardPage() {
     setSavingCatId(catId);
     await supabase.from('categories').update({ section }).eq('id', catId);
     setAllCategories(prev => prev.map(c => c.id === catId ? { ...c, section } : c));
+    setSavingCatId(null);
+  };
+
+  const toggleCategoryBrand = async (cat: Category) => {
+    setSavingCatId(cat.id);
+    const is_brand = !cat.is_brand;
+    await supabase.from('categories').update({ is_brand }).eq('id', cat.id);
+    setAllCategories(prev => prev.map(c => c.id === cat.id ? { ...c, is_brand } : c));
+    setSavingCatId(null);
+  };
+
+  // --- Category CRUD ---
+  const openNewCategory = () => {
+    setCatForm({ name: '', section: 'grocery', is_brand: false });
+    setCatError('');
+  };
+
+  const openEditCategory = (cat: Category) => {
+    setCatForm({ ...cat });
+    setCatError('');
+  };
+
+  const saveCategory = async () => {
+    if (!catForm || !catForm.name?.trim()) { setCatError('Category name is required.'); return; }
+    setSavingCat(true);
+    setCatError('');
+    if (catForm.id) {
+      const { error } = await supabase
+        .from('categories')
+        .update({ name: catForm.name.trim(), section: catForm.section, is_brand: catForm.is_brand ?? false })
+        .eq('id', catForm.id);
+      if (error) { setCatError(error.message); setSavingCat(false); return; }
+      setAllCategories(prev => prev.map(c => c.id === catForm.id ? { ...c, ...catForm, name: catForm.name!.trim() } as Category : c));
+    } else {
+      const payload = {
+        square_id: `local:${crypto.randomUUID()}`,
+        name: catForm.name.trim(),
+        section: catForm.section ?? 'grocery',
+        is_brand: catForm.is_brand ?? false,
+        sort_order: allCategories.length,
+      };
+      const { data, error } = await supabase.from('categories').insert([payload]).select().maybeSingle();
+      if (error) { setCatError(error.message); setSavingCat(false); return; }
+      if (data) setAllCategories(prev => [...prev, data]);
+    }
+    setSavingCat(false);
+    setCatForm(null);
+  };
+
+  const deleteCategory = async (cat: Category) => {
+    if (!window.confirm(`Delete "${cat.name}"? Products in this category will become uncategorised, not deleted.`)) return;
+    setSavingCatId(cat.id);
+    const { error } = await supabase.from('categories').delete().eq('id', cat.id);
+    if (!error) setAllCategories(prev => prev.filter(c => c.id !== cat.id));
     setSavingCatId(null);
   };
 
@@ -1600,24 +1657,86 @@ export default function AdminDashboardPage() {
             {tab === 'categories' && (
               <div className="space-y-3">
                 <div className="bg-white rounded-2xl shadow-card p-6">
-                  <h2 className="font-semibold text-tpl-dark text-lg mb-1">Category Sections</h2>
-                  <p className="text-sm text-gray-500 mb-6">
-                    Assign each category to <strong>Grocery &amp; Spices</strong> or <strong>Clothing</strong>. This controls which nav section it appears under.
-                  </p>
-                  {allCategories.length === 0 ? (
+                  <div className="flex items-start justify-between gap-4 mb-1">
+                    <div>
+                      <h2 className="font-semibold text-tpl-dark text-lg mb-1">Categories</h2>
+                      <p className="text-sm text-gray-500">
+                        Assign each category to <strong>Grocery &amp; Spices</strong> or <strong>Clothing</strong>, mark the ones that represent a brand, or add your own.
+                      </p>
+                    </div>
+                    <button
+                      onClick={openNewCategory}
+                      className="flex items-center gap-2 px-4 py-2 bg-tpl-forest text-white rounded-xl text-sm font-semibold hover:bg-tpl-mid transition-colors flex-shrink-0"
+                    >
+                      <Plus className="h-4 w-4" /> Add Category
+                    </button>
+                  </div>
+
+                  {catForm && (
+                    <div className="mt-5 bg-tpl-cream rounded-2xl p-5 border-2 border-tpl-lime/30">
+                      <h3 className="font-semibold text-tpl-dark text-sm mb-3">{catForm.id ? 'Edit Category' : 'New Category'}</h3>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+                        <input
+                          value={catForm.name ?? ''}
+                          onChange={e => setCatForm(f => ({ ...f!, name: e.target.value }))}
+                          placeholder="Category name"
+                          className="sm:col-span-2 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime"
+                        />
+                        <select
+                          value={catForm.section ?? 'grocery'}
+                          onChange={e => setCatForm(f => ({ ...f!, section: e.target.value as 'grocery' | 'clothing' }))}
+                          className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime bg-white"
+                        >
+                          <option value="grocery">Grocery &amp; Spices</option>
+                          <option value="clothing">Clothing</option>
+                        </select>
+                      </div>
+                      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer mb-4">
+                        <input
+                          type="checkbox"
+                          checked={catForm.is_brand ?? false}
+                          onChange={e => setCatForm(f => ({ ...f!, is_brand: e.target.checked }))}
+                          className="rounded accent-tpl-lime w-4 h-4"
+                        />
+                        This category represents a brand (shows under "All Brands")
+                      </label>
+                      {catError && (
+                        <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 border border-red-200 rounded-xl p-3 mb-3">
+                          <AlertCircle className="h-4 w-4 flex-shrink-0" /> {catError}
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={saveCategory}
+                          disabled={savingCat}
+                          className="px-5 py-2 bg-tpl-forest text-white text-sm font-semibold rounded-xl hover:bg-tpl-mid transition-colors disabled:opacity-50"
+                        >
+                          {savingCat ? 'Saving…' : 'Save Category'}
+                        </button>
+                        <button
+                          onClick={() => setCatForm(null)}
+                          className="px-4 py-2 border border-gray-200 text-gray-600 text-sm font-semibold rounded-xl hover:bg-gray-50 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {allCategories.length === 0 && !catForm ? (
                     <div className="text-center py-10">
                       <Tag className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-500 text-sm">No categories yet — sync your Square catalogue first.</p>
+                      <p className="text-gray-500 text-sm">No categories yet — add one above or sync your Square catalogue first.</p>
                     </div>
                   ) : (
-                    <div className="divide-y divide-gray-100">
+                    <div className="divide-y divide-gray-100 mt-4">
                       {allCategories.map(cat => (
-                        <div key={cat.id} className="flex items-center justify-between py-3 gap-4">
+                        <div key={cat.id} className="flex flex-wrap items-center justify-between py-3 gap-3">
                           <div>
                             <p className="font-medium text-tpl-dark text-sm">{cat.name}</p>
-                            {cat.is_brand && <span className="text-xs text-gray-400">Brand</span>}
+                            {cat.is_brand && <span className="text-xs text-tpl-forest font-medium">Brand</span>}
                           </div>
-                          <div className="flex gap-2 flex-shrink-0">
+                          <div className="flex items-center gap-2 flex-shrink-0">
                             <button
                               onClick={() => updateCategorySection(cat.id, 'grocery')}
                               disabled={savingCatId === cat.id}
@@ -1639,6 +1758,20 @@ export default function AdminDashboardPage() {
                               }`}
                             >
                               <Shirt className="h-3.5 w-3.5" /> Clothing
+                            </button>
+                            <button
+                              onClick={() => toggleCategoryBrand(cat)}
+                              disabled={savingCatId === cat.id}
+                              title={cat.is_brand ? 'Marked as a brand — click to unmark' : 'Mark as a brand'}
+                              className={`p-1.5 rounded-lg transition-colors ${cat.is_brand ? 'text-tpl-lime hover:bg-tpl-pale' : 'text-gray-300 hover:bg-gray-100'}`}
+                            >
+                              {cat.is_brand ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}
+                            </button>
+                            <button onClick={() => openEditCategory(cat)} className="p-1.5 text-gray-400 hover:text-tpl-forest hover:bg-tpl-cream rounded-lg transition-colors">
+                              <Edit2 className="h-4 w-4" />
+                            </button>
+                            <button onClick={() => deleteCategory(cat)} disabled={savingCatId === cat.id} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                              <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
                         </div>
