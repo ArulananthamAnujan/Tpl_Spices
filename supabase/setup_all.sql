@@ -1,7 +1,9 @@
 -- ============================================================
 -- Tpl Spices — full database setup (all migrations, in order)
--- HOW TO USE: open your Supabase project → SQL Editor → New query
--- → paste this entire file → Run. Safe to re-run (idempotent).
+--
+-- HOW TO USE: Supabase → SQL Editor → New query → paste all → Run.
+-- SAFE TO RE-RUN: every statement is idempotent, so running this
+-- again only applies what's missing and leaves existing data alone.
 -- ============================================================
 
 -- >>>>>>>>>> 20260611104048_tpl_schema_part1_base_tables.sql <<<<<<<<<<
@@ -368,14 +370,17 @@ CREATE TABLE IF NOT EXISTS promo_slides (
 
 ALTER TABLE promo_slides ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "public_read_active_slides" ON promo_slides;
 CREATE POLICY "public_read_active_slides" ON promo_slides FOR SELECT
   TO anon, authenticated USING (active = true);
 
+DROP POLICY IF EXISTS "super_admin_insert_slides" ON promo_slides;
 CREATE POLICY "super_admin_insert_slides" ON promo_slides FOR INSERT
   TO authenticated WITH CHECK (
     (SELECT role FROM profiles WHERE id = auth.uid()) = 'super_admin'
   );
 
+DROP POLICY IF EXISTS "super_admin_update_slides" ON promo_slides;
 CREATE POLICY "super_admin_update_slides" ON promo_slides FOR UPDATE
   TO authenticated USING (
     (SELECT role FROM profiles WHERE id = auth.uid()) = 'super_admin'
@@ -383,6 +388,7 @@ CREATE POLICY "super_admin_update_slides" ON promo_slides FOR UPDATE
     (SELECT role FROM profiles WHERE id = auth.uid()) = 'super_admin'
   );
 
+DROP POLICY IF EXISTS "super_admin_delete_slides" ON promo_slides;
 CREATE POLICY "super_admin_delete_slides" ON promo_slides FOR DELETE
   TO authenticated USING (
     (SELECT role FROM profiles WHERE id = auth.uid()) = 'super_admin'
@@ -550,6 +556,7 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE;
 -- Solution: let all authenticated users read all profiles (roles aren't secret in this system),
 -- and keep write policies as-is using get_user_role() which is now safe (SECURITY DEFINER bypasses RLS).
 DROP POLICY IF EXISTS "profiles_own_select" ON profiles;
+DROP POLICY IF EXISTS "profiles_select_authenticated" ON profiles;
 CREATE POLICY "profiles_select_authenticated" ON profiles
   FOR SELECT TO authenticated USING (true);
 
@@ -594,20 +601,24 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('product-images', 'product-images', true)
 ON CONFLICT (id) DO NOTHING;
 
+DROP POLICY IF EXISTS "product_images_public_read" ON storage.objects;
 CREATE POLICY "product_images_public_read"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'product-images');
 
+DROP POLICY IF EXISTS "product_images_admin_insert" ON storage.objects;
 CREATE POLICY "product_images_admin_insert"
   ON storage.objects FOR INSERT
   TO authenticated
   WITH CHECK (bucket_id = 'product-images');
 
+DROP POLICY IF EXISTS "product_images_admin_update" ON storage.objects;
 CREATE POLICY "product_images_admin_update"
   ON storage.objects FOR UPDATE
   TO authenticated
   USING (bucket_id = 'product-images');
 
+DROP POLICY IF EXISTS "product_images_admin_delete" ON storage.objects;
 CREATE POLICY "product_images_admin_delete"
   ON storage.objects FOR DELETE
   TO authenticated

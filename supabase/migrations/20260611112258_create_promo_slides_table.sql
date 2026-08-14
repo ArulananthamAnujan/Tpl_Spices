@@ -16,14 +16,17 @@ CREATE TABLE IF NOT EXISTS promo_slides (
 
 ALTER TABLE promo_slides ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "public_read_active_slides" ON promo_slides;
 CREATE POLICY "public_read_active_slides" ON promo_slides FOR SELECT
   TO anon, authenticated USING (active = true);
 
+DROP POLICY IF EXISTS "super_admin_insert_slides" ON promo_slides;
 CREATE POLICY "super_admin_insert_slides" ON promo_slides FOR INSERT
   TO authenticated WITH CHECK (
     (SELECT role FROM profiles WHERE id = auth.uid()) = 'super_admin'
   );
 
+DROP POLICY IF EXISTS "super_admin_update_slides" ON promo_slides;
 CREATE POLICY "super_admin_update_slides" ON promo_slides FOR UPDATE
   TO authenticated USING (
     (SELECT role FROM profiles WHERE id = auth.uid()) = 'super_admin'
@@ -31,6 +34,7 @@ CREATE POLICY "super_admin_update_slides" ON promo_slides FOR UPDATE
     (SELECT role FROM profiles WHERE id = auth.uid()) = 'super_admin'
   );
 
+DROP POLICY IF EXISTS "super_admin_delete_slides" ON promo_slides;
 CREATE POLICY "super_admin_delete_slides" ON promo_slides FOR DELETE
   TO authenticated USING (
     (SELECT role FROM profiles WHERE id = auth.uid()) = 'super_admin'

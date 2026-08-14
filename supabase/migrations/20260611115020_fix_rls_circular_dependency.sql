@@ -14,6 +14,7 @@ $$ LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE;
 -- Solution: let all authenticated users read all profiles (roles aren't secret in this system),
 -- and keep write policies as-is using get_user_role() which is now safe (SECURITY DEFINER bypasses RLS).
 DROP POLICY IF EXISTS "profiles_own_select" ON profiles;
+DROP POLICY IF EXISTS "profiles_select_authenticated" ON profiles;
 CREATE POLICY "profiles_select_authenticated" ON profiles
   FOR SELECT TO authenticated USING (true);
 
