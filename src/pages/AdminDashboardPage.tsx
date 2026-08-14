@@ -1,63 +1,17 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   Store as StoreIcon, Users, Package, RefreshCw, Plus, Edit2, Trash2,
   CheckCircle, AlertCircle, Megaphone, Upload, X, ToggleLeft, ToggleRight,
-  Image as ImageIcon, Type, Tag, Shirt, Salad, Camera, Search as SearchIcon, Wand2, Loader2, Boxes,
-  History as HistoryIcon, Clock, PackagePlus
+  Image as ImageIcon, Type, Tag, Shirt, Salad, Camera, Search as SearchIcon, Wand2, Loader2, Boxes
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Store, Profile, Order, PromoSlide, Category, Product, formatPrice } from '../lib/types';
 import OrderStatusBadge from '../components/OrderStatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import PricingPromotionsPanel from '../components/PricingPromotionsPanel';
+import InventoryPanel from '../components/InventoryPanel';
 
 type Tab = 'orders' | 'stores' | 'staff' | 'catalog' | 'categories' | 'products' | 'inventory' | 'pricing' | 'promos';
-
-// A single row from the inventory_movements ledger.
-type InvMove = {
-  id: string;
-  variation_id: string;
-  delta: number;
-  reason: string;
-  received_at: string | null;
-  created_at: string;
-  note: string | null;
-  creator?: { full_name: string | null } | null;
-};
-
-// Work out how much stock is available and how old it is, using FIFO:
-// the oldest received batches are depleted first by the outgoing movements.
-function computeAging(moves: InvMove[]) {
-  const inflows = moves
-    .filter(m => m.delta > 0)
-    .map(m => ({ when: m.received_at || m.created_at, remaining: m.delta }))
-    .sort((a, b) => new Date(a.when).getTime() - new Date(b.when).getTime());
-  let out = moves.filter(m => m.delta < 0).reduce((s, m) => s + -m.delta, 0);
-  for (const b of inflows) {
-    if (out <= 0) break;
-    const take = Math.min(b.remaining, out);
-    b.remaining -= take;
-    out -= take;
-  }
-  const now = Date.now();
-  const bk = { available: 0, fresh: 0, mid: 0, old: 0 }; // 0-1m, 1-3m, 3m+
-  for (const b of inflows) {
-    if (b.remaining <= 0) continue;
-    bk.available += b.remaining;
-    const days = (now - new Date(b.when).getTime()) / 86400000;
-    if (days < 30) bk.fresh += b.remaining;
-    else if (days < 90) bk.mid += b.remaining;
-    else bk.old += b.remaining;
-  }
-  return bk;
-}
-
-const REASON_LABEL: Record<string, string> = {
-  received: 'Received',
-  sale: 'Sale',
-  adjustment: 'Adjusted',
-  initial: 'Opening balance',
-};
 
 const EMPTY_SLIDE: Partial<PromoSlide> = {
   title: '',
@@ -130,20 +84,6 @@ export default function AdminDashboardPage() {
   const [storeForm, setStoreForm] = useState<Partial<Store> | null>(null);
   const [savingStore, setSavingStore] = useState(false);
 
-  // Inventory management
-  const [invStoreId, setInvStoreId] = useState('');
-  const [invProducts, setInvProducts] = useState<Product[]>([]);
-  const [invLoading, setInvLoading] = useState(false);
-  const [invRows, setInvRows] = useState<Record<string, number>>({}); // variation_id -> tracked quantity
-  const [invDrafts, setInvDrafts] = useState<Record<string, string>>({}); // variation_id -> input value while editing
-  const [invSavingId, setInvSavingId] = useState<string | null>(null);
-  const [invSearch, setInvSearch] = useState('');
-  const [invMoves, setInvMoves] = useState<Record<string, InvMove[]>>({}); // variation_id -> movements (newest first)
-  const [invPanelVar, setInvPanelVar] = useState<string | null>(null); // which variation's detail panel is open
-  const [addQty, setAddQty] = useState('');
-  const [addDate, setAddDate] = useState('');
-  const [addNote, setAddNote] = useState('');
-
   // Promo slide form
   const [slideForm, setSlideForm] = useState<Partial<PromoSlide> | null>(null);
   const [savingSlide, setSavingSlide] = useState(false);
@@ -180,99 +120,8 @@ export default function AdminDashboardPage() {
     } else if (t === 'products') {
       const { data } = await supabase.from('products').select('*, category:categories(name, section)').eq('active', true).order('name');
       setProducts(data ?? []);
-    } else if (t === 'inventory') {
-      const [storesRes, productsRes] = await Promise.all([
-        stores.length ? Promise.resolve({ data: stores }) : supabase.from('stores').select('*').order('name'),
-        supabase.from('products').select('*, category:categories(name), variations:product_variations(*)').eq('active', true).order('name'),
-      ]);
-      if (!stores.length) setStores((storesRes as any).data ?? []);
-      const loadedStores = stores.length ? stores : ((storesRes as any).data ?? []);
-      setInvProducts((productsRes as any).data ?? []);
-      if (!invStoreId && loadedStores.length > 0) setInvStoreId(loadedStores[0].id);
     }
     setLoading(false);
-  };
-
-  const loadInventoryForStore = useCallback(async (storeId: string) => {
-    if (!storeId) return;
-    setInvLoading(true);
-    const [invRes, movesRes] = await Promise.all([
-      supabase.from('store_inventory').select('variation_id, quantity').eq('store_id', storeId),
-      supabase
-        .from('inventory_movements')
-        .select('id, variation_id, delta, reason, received_at, created_at, note, creator:profiles(full_name)')
-        .eq('store_id', storeId)
-        .order('created_at', { ascending: false }),
-    ]);
-    const map: Record<string, number> = {};
-    (invRes.data ?? []).forEach(r => { map[r.variation_id] = r.quantity; });
-    setInvRows(map);
-    const moveMap: Record<string, InvMove[]> = {};
-    ((movesRes.data as InvMove[] | null) ?? []).forEach(m => {
-      (moveMap[m.variation_id] = moveMap[m.variation_id] ?? []).push(m);
-    });
-    setInvMoves(moveMap);
-    setInvDrafts({});
-    setInvLoading(false);
-  }, []);
-
-  useEffect(() => {
-    if (tab === 'inventory' && invStoreId) loadInventoryForStore(invStoreId);
-  }, [tab, invStoreId, loadInventoryForStore]);
-
-  // Setting the quantity records an "adjustment" movement (the difference from
-  // the current level) so the change is logged with a timestamp and the user.
-  const saveInventoryQty = async (variationId: string, qtyStr: string) => {
-    const qty = Math.max(0, Math.floor(Number(qtyStr)));
-    if (!Number.isFinite(qty)) return;
-    const current = invRows[variationId] ?? 0;
-    const delta = qty - current;
-    if (delta === 0) {
-      setInvDrafts(prev => { const next = { ...prev }; delete next[variationId]; return next; });
-      return;
-    }
-    setInvSavingId(variationId);
-    const { error } = await supabase.rpc('record_inventory_movement', {
-      p_store_id: invStoreId,
-      p_variation_id: variationId,
-      p_delta: delta,
-      p_reason: 'adjustment',
-      p_note: `Set quantity to ${qty}`,
-    });
-    if (error) alert(error.message);
-    else await loadInventoryForStore(invStoreId);
-    setInvSavingId(null);
-  };
-
-  // Add received stock as a batch, with the date it arrived (used for aging).
-  const addStock = async (variationId: string) => {
-    const qty = Math.floor(Number(addQty));
-    if (!Number.isFinite(qty) || qty <= 0) { alert('Enter a quantity greater than 0.'); return; }
-    setInvSavingId(variationId);
-    const { error } = await supabase.rpc('record_inventory_movement', {
-      p_store_id: invStoreId,
-      p_variation_id: variationId,
-      p_delta: qty,
-      p_reason: 'received',
-      p_received_at: addDate ? new Date(addDate).toISOString() : null,
-      p_note: addNote || null,
-    });
-    if (error) {
-      alert(error.message);
-    } else {
-      setAddQty(''); setAddDate(''); setAddNote('');
-      await loadInventoryForStore(invStoreId);
-    }
-    setInvSavingId(null);
-  };
-
-  const untrackInventory = async (variationId: string) => {
-    setInvSavingId(variationId);
-    const { error } = await supabase.from('store_inventory').delete().eq('store_id', invStoreId).eq('variation_id', variationId);
-    if (!error) {
-      setInvRows(prev => { const next = { ...prev }; delete next[variationId]; return next; });
-    }
-    setInvSavingId(null);
   };
 
   const syncCatalog = async () => {
@@ -1811,207 +1660,7 @@ export default function AdminDashboardPage() {
             {tab === 'pricing' && <PricingPromotionsPanel />}
 
             {/* INVENTORY TAB */}
-            {tab === 'inventory' && (
-              <div className="space-y-4">
-                <div className="bg-white rounded-2xl shadow-card p-6">
-                  <h2 className="font-semibold text-tpl-dark text-lg mb-1">Stock by Store</h2>
-                  <p className="text-sm text-gray-500 mb-4">
-                    Set a quantity to start tracking stock for a variation at this store — it'll show as limited/out of stock on the storefront and be checked at checkout.
-                    Untracked variations stay shown as always available, same as today. Open the <HistoryIcon className="inline h-3.5 w-3.5 align-text-bottom" /> icon on any variation to add received stock with a date, and see availability, aging (how old the stock is), and the full change history.
-                  </p>
-                  <div className="flex flex-wrap gap-3 items-center">
-                    <select
-                      value={invStoreId}
-                      onChange={e => setInvStoreId(e.target.value)}
-                      className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime bg-white"
-                    >
-                      {stores.length === 0 && <option value="">No stores yet</option>}
-                      {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                    <div className="relative flex-1 min-w-[200px]">
-                      <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                      <input
-                        value={invSearch}
-                        onChange={e => setInvSearch(e.target.value)}
-                        placeholder="Search products…"
-                        className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {!invStoreId ? (
-                  <div className="bg-white rounded-2xl shadow-card p-12 text-center">
-                    <Boxes className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-500">Add a store first, then come back to set stock levels.</p>
-                  </div>
-                ) : invLoading ? (
-                  <div className="flex justify-center py-16"><LoadingSpinner size="lg" /></div>
-                ) : (
-                  <div className="bg-white rounded-2xl shadow-card overflow-hidden">
-                    <div className="divide-y divide-gray-100">
-                      {invProducts
-                        .filter(p => !invSearch || p.name.toLowerCase().includes(invSearch.toLowerCase()))
-                        .map(product => (
-                          <div key={product.id} className="p-4">
-                            <p className="text-sm font-semibold text-tpl-dark mb-2">{product.name}</p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                              {(product.variations ?? []).map(v => {
-                                const tracked = Object.prototype.hasOwnProperty.call(invRows, v.id);
-                                const currentQty = invRows[v.id];
-                                const draft = invDrafts[v.id];
-                                const saving = invSavingId === v.id;
-                                return (
-                                  <div key={v.id} className="flex items-center gap-2 bg-tpl-cream rounded-xl px-3 py-2">
-                                    <span className="text-xs text-gray-600 flex-1 truncate">{v.name}</span>
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      value={draft !== undefined ? draft : (tracked ? String(currentQty) : '')}
-                                      onChange={e => setInvDrafts(prev => ({ ...prev, [v.id]: e.target.value }))}
-                                      placeholder="∞"
-                                      className="w-16 px-2 py-1 border border-gray-200 rounded-lg text-sm text-right focus:outline-none focus:ring-2 focus:ring-tpl-lime"
-                                    />
-                                    <button
-                                      onClick={() => saveInventoryQty(v.id, draft !== undefined ? draft : String(currentQty ?? 0))}
-                                      disabled={saving || draft === undefined}
-                                      title="Save quantity"
-                                      className="text-xs px-2 py-1 bg-tpl-forest text-white rounded-lg font-medium hover:bg-tpl-mid transition-colors disabled:opacity-30"
-                                    >
-                                      {saving ? '…' : 'Save'}
-                                    </button>
-                                    <button
-                                      onClick={() => setInvPanelVar(prev => (prev === v.id ? null : v.id))}
-                                      title="Stock history & aging"
-                                      className={`text-xs px-2 py-1 rounded-lg transition-colors ${invPanelVar === v.id ? 'text-tpl-forest' : 'text-gray-400 hover:text-tpl-forest'}`}
-                                    >
-                                      <HistoryIcon className="h-3.5 w-3.5" />
-                                    </button>
-                                    {tracked && (
-                                      <button
-                                        onClick={() => untrackInventory(v.id)}
-                                        disabled={saving}
-                                        title="Stop tracking — treat as always available"
-                                        className="text-xs px-2 py-1 text-gray-400 hover:text-red-500 transition-colors"
-                                      >
-                                        <X className="h-3.5 w-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                              {(product.variations ?? []).length === 0 && (
-                                <span className="text-xs text-gray-400 italic">No variations</span>
-                              )}
-                            </div>
-                            {(() => {
-                              const openV = (product.variations ?? []).find(v => v.id === invPanelVar);
-                              if (!openV) return null;
-                              const moves = invMoves[openV.id] ?? [];
-                              const ag = computeAging(moves);
-                              const available = invRows[openV.id] ?? ag.available;
-                              const saving = invSavingId === openV.id;
-                              return (
-                                <div className="mt-3 border border-tpl-forest/20 rounded-xl bg-white p-4 space-y-4">
-                                  <div className="flex items-center justify-between">
-                                    <p className="text-sm font-semibold text-tpl-dark">{openV.name} — stock details</p>
-                                    <button onClick={() => setInvPanelVar(null)} className="text-gray-400 hover:text-gray-600">
-                                      <X className="h-4 w-4" />
-                                    </button>
-                                  </div>
-
-                                  {/* Aging summary */}
-                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                                    <div className="rounded-xl bg-tpl-cream px-3 py-2">
-                                      <p className="text-[11px] uppercase tracking-wide text-gray-500">Available</p>
-                                      <p className="text-lg font-bold text-tpl-dark">{available}</p>
-                                    </div>
-                                    <div className="rounded-xl bg-green-50 px-3 py-2">
-                                      <p className="text-[11px] uppercase tracking-wide text-green-700">New · under 1 mo</p>
-                                      <p className="text-lg font-bold text-green-700">{ag.fresh}</p>
-                                    </div>
-                                    <div className="rounded-xl bg-amber-50 px-3 py-2">
-                                      <p className="text-[11px] uppercase tracking-wide text-amber-700">1–3 months</p>
-                                      <p className="text-lg font-bold text-amber-700">{ag.mid}</p>
-                                    </div>
-                                    <div className="rounded-xl bg-red-50 px-3 py-2">
-                                      <p className="text-[11px] uppercase tracking-wide text-red-700">Over 3 months</p>
-                                      <p className="text-lg font-bold text-red-700">{ag.old}</p>
-                                    </div>
-                                  </div>
-
-                                  {/* Add received stock */}
-                                  <div className="rounded-xl border border-gray-100 p-3">
-                                    <p className="flex items-center gap-1.5 text-xs font-semibold text-tpl-dark mb-2">
-                                      <PackagePlus className="h-4 w-4 text-tpl-forest" /> Add received stock
-                                    </p>
-                                    <div className="flex flex-wrap items-end gap-2">
-                                      <label className="text-[11px] text-gray-500">
-                                        Quantity
-                                        <input type="number" min={1} value={addQty} onChange={e => setAddQty(e.target.value)}
-                                          placeholder="0" className="block w-24 mt-0.5 px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
-                                      </label>
-                                      <label className="text-[11px] text-gray-500">
-                                        Received on
-                                        <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)}
-                                          className="block mt-0.5 px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
-                                      </label>
-                                      <label className="text-[11px] text-gray-500 flex-1 min-w-[140px]">
-                                        Note (optional)
-                                        <input value={addNote} onChange={e => setAddNote(e.target.value)}
-                                          placeholder="Supplier, batch #…" className="block w-full mt-0.5 px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
-                                      </label>
-                                      <button onClick={() => addStock(openV.id)} disabled={saving}
-                                        className="text-xs px-3 py-1.5 bg-tpl-forest text-white rounded-lg font-medium hover:bg-tpl-mid transition-colors disabled:opacity-40">
-                                        {saving ? '…' : 'Add stock'}
-                                      </button>
-                                    </div>
-                                    <p className="text-[11px] text-gray-400 mt-1.5">Leave the date blank to use today. Received date is what the aging report above is based on.</p>
-                                  </div>
-
-                                  {/* History */}
-                                  <div>
-                                    <p className="flex items-center gap-1.5 text-xs font-semibold text-tpl-dark mb-2">
-                                      <Clock className="h-4 w-4 text-tpl-forest" /> History
-                                    </p>
-                                    {moves.length === 0 ? (
-                                      <p className="text-xs text-gray-400 italic">No stock changes recorded yet.</p>
-                                    ) : (
-                                      <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
-                                        {moves.map(m => (
-                                          <div key={m.id} className="flex items-center gap-3 py-1.5 text-xs">
-                                            <span className={`font-bold w-12 text-right ${m.delta > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                              {m.delta > 0 ? `+${m.delta}` : m.delta}
-                                            </span>
-                                            <span className="flex-1">
-                                              <span className="font-medium text-tpl-dark">{REASON_LABEL[m.reason] ?? m.reason}</span>
-                                              {m.received_at && (
-                                                <span className="text-gray-400"> · received {new Date(m.received_at).toLocaleDateString()}</span>
-                                              )}
-                                              {m.note && <span className="text-gray-400"> · {m.note}</span>}
-                                            </span>
-                                            <span className="text-gray-400 whitespace-nowrap">
-                                              {new Date(m.created_at).toLocaleDateString()}
-                                              {m.creator?.full_name ? ` · ${m.creator.full_name}` : ''}
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })()}
-                          </div>
-                        ))}
-                      {invProducts.length === 0 && (
-                        <p className="text-sm text-gray-400 text-center py-10">No products found.</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+            {tab === 'inventory' && <InventoryPanel />}
 
             {/* PROMOTIONS TAB */}
             {tab === 'promos' && (
