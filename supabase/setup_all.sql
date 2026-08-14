@@ -1499,3 +1499,9 @@ CREATE POLICY "products_staff_update" ON products FOR UPDATE TO authenticated
   USING (get_user_role() = 'staff')
   WITH CHECK (get_user_role() = 'staff');
 
+
+-- ============================================================
+-- Tell PostgREST to reload immediately, so the app sees new tables,
+-- columns and functions without a "schema cache" error.
+-- ============================================================
+NOTIFY pgrst, 'reload schema';
