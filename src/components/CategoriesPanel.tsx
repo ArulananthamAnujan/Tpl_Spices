@@ -68,7 +68,8 @@ export default function CategoriesPanel() {
     const trimmed = editName.trim();
     if (!trimmed) return;
     setBusyId(id);
-    const { error } = await supabase.from('categories').update({ name: trimmed }).eq('id', id);
+    // name_overridden stops the Square sync renaming it back.
+    const { error } = await supabase.from('categories').update({ name: trimmed, name_overridden: true }).eq('id', id);
     if (error) flash(error.message, true); else { setEditId(null); await load(); }
     setBusyId(null);
   };

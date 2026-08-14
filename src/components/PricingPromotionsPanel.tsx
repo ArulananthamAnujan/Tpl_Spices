@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Search, Tag, Percent, DollarSign, X, CheckSquare, Loader2, Sparkles, Check } from 'lucide-react';
+import { Search, Tag, Percent, DollarSign, X, CheckSquare, Loader2, Sparkles, Check, FolderTree } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Product, ProductVariation, Category, formatPrice } from '../lib/types';
 import { isPromoActive, promoPriceCents } from '../lib/pricing';
@@ -20,6 +20,10 @@ export default function PricingPromotionsPanel() {
   const [bulkWsMin, setBulkWsMin] = useState('');
   const [bulkWsPct, setBulkWsPct] = useState('');
   const [bulkPriceBusy, setBulkPriceBusy] = useState(false);
+
+  // Bulk category assignment
+  const [moveCat, setMoveCat] = useState('');
+  const [moveBusy, setMoveBusy] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [savingId, setSavingId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { retail: string; ws: string; wsMin: string }>>({});
@@ -123,11 +127,36 @@ export default function PricingPromotionsPanel() {
     setSavingId(v.id);
     const { error } = await supabase
       .from('product_variations')
-      .update({ price_cents: retail, wholesale_price_cents: wsPrice, wholesale_min_qty: wsMin })
+      // price_overridden keeps the Square sync from overwriting this price.
+      .update({ price_cents: retail, wholesale_price_cents: wsPrice, wholesale_min_qty: wsMin, price_overridden: true })
       .eq('id', v.id);
     if (error) setToast(error.message);
     else { setToast('Saved.'); await load(); setDrafts(prev => { const n = { ...prev }; delete n[v.id]; return n; }); }
     setSavingId(null);
+  };
+
+  // ---- Move the selected products into a category / subcategory ----
+  // category_overridden tells the Square sync to leave this placement alone.
+  const moveToCategory = async () => {
+    if (selected.size === 0) { setToast('Select some products first.'); return; }
+    if (!moveCat) { setToast('Pick a category to move them into.'); return; }
+    setMoveBusy(true);
+    const { error } = await supabase
+      .from('products')
+      .update({
+        category_id: moveCat === '__none__' ? null : moveCat,
+        category_overridden: true,
+      })
+      .in('id', [...selected]);
+    if (error) setToast(error.message);
+    else {
+      const name = moveCat === '__none__'
+        ? 'Uncategorised'
+        : categories.find(c => c.id === moveCat)?.name ?? 'category';
+      setToast(`Moved ${selected.size} product${selected.size > 1 ? 's' : ''} into ${name}.`);
+      await load();
+    }
+    setMoveBusy(false);
   };
 
   // ---- Bulk wholesale pricing on the selection (no promotion involved) ----
@@ -217,6 +246,34 @@ export default function PricingPromotionsPanel() {
         <p className="text-sm text-gray-500 mb-4">
           Edit retail and wholesale prices inline on each product. <b>Drag a box over products</b> (or click / shift-click) to select them, then set wholesale pricing or run a promotion on the whole selection.
         </p>
+
+        {/* Move selected products into a category / subcategory */}
+        <div className="rounded-xl border border-gray-200 p-4 mb-4">
+          <p className="text-xs font-semibold text-tpl-dark mb-2 flex items-center gap-1.5">
+            <FolderTree className="h-4 w-4 text-tpl-forest" /> Move selected products into a category
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <select value={moveCat} onChange={e => setMoveCat(e.target.value)}
+              className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-tpl-lime min-w-[220px]">
+              <option value="">Choose a category…</option>
+              {categories.filter(c => !c.parent_id).map(parent => [
+                <option key={parent.id} value={parent.id}>{parent.name}</option>,
+                ...categories.filter(c => c.parent_id === parent.id).map(child => (
+                  <option key={child.id} value={child.id}>&nbsp;&nbsp;— {child.name}</option>
+                )),
+              ])}
+              <option value="__none__">Uncategorised</option>
+            </select>
+            <button onClick={moveToCategory} disabled={moveBusy}
+              className="px-4 py-2 bg-tpl-forest text-white rounded-xl text-sm font-semibold hover:bg-tpl-mid transition-colors disabled:opacity-40 flex items-center gap-1.5">
+              {moveBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Move {selected.size} selected
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-2">
+            This is how products get into a subcategory — Square has no subcategories, so once you move a product here the sync will leave it where you put it.
+          </p>
+        </div>
 
         {/* Bulk retail/wholesale pricing — no promotion needed */}
         <div className="rounded-xl border border-gray-200 p-4 mb-4">

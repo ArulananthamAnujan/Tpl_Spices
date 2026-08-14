@@ -34,6 +34,7 @@ export interface Category {
   is_brand: boolean;
   section: 'grocery' | 'clothing';
   parent_id: string | null;
+  name_overridden?: boolean;
 }
 
 export interface PromoSlide {
@@ -61,6 +62,7 @@ export interface Product {
   image_url: string | null;
   active: boolean;
   brand: string | null;
+  category_overridden?: boolean;
   category?: Category;
   variations?: ProductVariation[];
 }
@@ -78,6 +80,7 @@ export interface ProductVariation {
   promo_value: number | null;
   promo_start: string | null;
   promo_end: string | null;
+  price_overridden?: boolean;
 }
 
 export interface StoreInventory {

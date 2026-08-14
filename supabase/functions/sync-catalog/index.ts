@@ -115,18 +115,32 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Upsert categories
+    // Upsert categories.
+    // Categories renamed in the dashboard keep their local name — skip them so
+    // the sync doesn't undo the shop's own naming.
     let catCount = 0;
     if (squareCategories.length > 0) {
-      const cats = squareCategories.map((c, i) => ({
-        square_id: c.id,
-        name: c.category_data?.name ?? "Unknown",
-        sort_order: i,
-      }));
-      const { error } = await supabaseAdmin
+      const { data: existingCats } = await supabaseAdmin
         .from("categories")
-        .upsert(cats, { onConflict: "square_id" });
-      if (error) throw new Error("categories upsert: " + error.message);
+        .select("square_id, name_overridden");
+      const renamedLocally = new Set(
+        (existingCats ?? []).filter((c: any) => c.name_overridden).map((c: any) => c.square_id),
+      );
+
+      const cats = squareCategories
+        .map((c, i) => ({
+          square_id: c.id,
+          name: c.category_data?.name ?? "Unknown",
+          sort_order: i,
+        }))
+        .filter(c => !renamedLocally.has(c.square_id));
+
+      if (cats.length > 0) {
+        const { error } = await supabaseAdmin
+          .from("categories")
+          .upsert(cats, { onConflict: "square_id" });
+        if (error) throw new Error("categories upsert: " + error.message);
+      }
       catCount = cats.length;
     }
 
@@ -134,10 +148,19 @@ Deno.serve(async (req: Request) => {
     const catMap: Record<string, string> = {};
     for (const c of dbCats ?? []) catMap[c.square_id] = c.id;
 
-    // Upsert products
+    // Upsert products.
+    // Products filed into a category/subcategory here keep that placement —
+    // Square has no subcategories, so its category would otherwise win.
     let prodCount = 0;
     if (squareItems.length > 0) {
-      const prods = squareItems.map(item => {
+      const { data: existingProds } = await supabaseAdmin
+        .from("products")
+        .select("square_item_id, category_overridden");
+      const categoryPinned = new Set(
+        (existingProds ?? []).filter((p: any) => p.category_overridden).map((p: any) => p.square_item_id),
+      );
+
+      const base = squareItems.map(item => {
         const itemData = item.item_data ?? {};
         const categorySquareId = itemData.category_id ?? itemData.categories?.[0]?.id ?? null;
         const imageId = item.image_ids?.[0] ?? itemData.image_ids?.[0] ?? null;
@@ -150,11 +173,26 @@ Deno.serve(async (req: Request) => {
           active: !item.is_deleted,
         };
       });
-      const { error } = await supabaseAdmin
-        .from("products")
-        .upsert(prods, { onConflict: "square_item_id" });
-      if (error) throw new Error("products upsert: " + error.message);
-      prodCount = prods.length;
+
+      // Two passes so each payload has a uniform set of columns.
+      const followSquare = base.filter(p => !categoryPinned.has(p.square_item_id));
+      const keepCategory = base
+        .filter(p => categoryPinned.has(p.square_item_id))
+        .map(({ category_id: _ignored, ...rest }) => rest);
+
+      if (followSquare.length > 0) {
+        const { error } = await supabaseAdmin
+          .from("products")
+          .upsert(followSquare, { onConflict: "square_item_id" });
+        if (error) throw new Error("products upsert: " + error.message);
+      }
+      if (keepCategory.length > 0) {
+        const { error } = await supabaseAdmin
+          .from("products")
+          .upsert(keepCategory, { onConflict: "square_item_id" });
+        if (error) throw new Error("products upsert (pinned category): " + error.message);
+      }
+      prodCount = base.length;
     }
 
     const { data: dbProds } = await supabaseAdmin.from("products").select("id, square_item_id");
@@ -181,10 +219,33 @@ Deno.serve(async (req: Request) => {
         .filter(Boolean) as any[];
 
       if (vars.length > 0) {
-        const { error } = await supabaseAdmin
+        // Retail prices set in the dashboard win over Square's price.
+        // (Wholesale and promo fields aren't in this payload, so they're
+        // untouched either way.)
+        const { data: existingVars } = await supabaseAdmin
           .from("product_variations")
-          .upsert(vars, { onConflict: "square_variation_id" });
-        if (error) throw new Error("variations upsert: " + error.message);
+          .select("square_variation_id, price_overridden");
+        const pricePinned = new Set(
+          (existingVars ?? []).filter((v: any) => v.price_overridden).map((v: any) => v.square_variation_id),
+        );
+
+        const followSquare = vars.filter(v => !pricePinned.has(v.square_variation_id));
+        const keepPrice = vars
+          .filter(v => pricePinned.has(v.square_variation_id))
+          .map(({ price_cents: _ignored, ...rest }) => rest);
+
+        if (followSquare.length > 0) {
+          const { error } = await supabaseAdmin
+            .from("product_variations")
+            .upsert(followSquare, { onConflict: "square_variation_id" });
+          if (error) throw new Error("variations upsert: " + error.message);
+        }
+        if (keepPrice.length > 0) {
+          const { error } = await supabaseAdmin
+            .from("product_variations")
+            .upsert(keepPrice, { onConflict: "square_variation_id" });
+          if (error) throw new Error("variations upsert (pinned price): " + error.message);
+        }
         varCount = vars.length;
       }
     }
