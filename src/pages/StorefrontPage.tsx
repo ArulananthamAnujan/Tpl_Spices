@@ -57,7 +57,10 @@ export default function StorefrontPage() {
       .order('name');
 
     if (selectedCategory) {
-      query = query.eq('category_id', selectedCategory);
+      // Selecting a parent category also shows everything in its subcategories.
+      const childIds = categories.filter(c => c.parent_id === selectedCategory).map(c => c.id);
+      if (childIds.length > 0) query = query.in('category_id', [selectedCategory, ...childIds]);
+      else query = query.eq('category_id', selectedCategory);
     } else {
       const sectionCatIds = categories
         .filter(c => c.section === section)
@@ -283,15 +286,34 @@ export default function StorefrontPage() {
               >
                 All Products
               </button>
-              {sidebarCategories.map(cat => (
-                <button
-                  key={cat.id}
-                  onClick={() => selectCategory(cat.id)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-colors ${selectedCategory === cat.id ? 'bg-tpl-forest text-white font-medium' : 'text-gray-600 hover:bg-tpl-cream'}`}
-                >
-                  {cat.name}
-                </button>
-              ))}
+              {sidebarCategories.filter(c => !c.parent_id).map(cat => {
+                const children = sidebarCategories.filter(c => c.parent_id === cat.id);
+                const inBranch = selectedCategory === cat.id || children.some(c => c.id === selectedCategory);
+                return (
+                  <div key={cat.id}>
+                    <button
+                      onClick={() => selectCategory(cat.id)}
+                      className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-colors ${selectedCategory === cat.id ? 'bg-tpl-forest text-white font-medium' : 'text-gray-600 hover:bg-tpl-cream'}`}
+                    >
+                      {cat.name}
+                    </button>
+                    {/* Subcategories — revealed while browsing this branch */}
+                    {children.length > 0 && inBranch && (
+                      <div className="ml-3 pl-2 border-l border-gray-100 mb-1">
+                        {children.map(child => (
+                          <button
+                            key={child.id}
+                            onClick={() => selectCategory(child.id)}
+                            className={`w-full text-left px-3 py-1.5 rounded-lg text-[13px] mb-0.5 transition-colors ${selectedCategory === child.id ? 'bg-tpl-pale text-tpl-forest font-medium' : 'text-gray-500 hover:bg-tpl-cream'}`}
+                          >
+                            {child.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
               {sidebarCategories.length === 0 && (
                 <p className="text-xs text-gray-400 italic px-3 py-2">No categories yet.</p>
               )}

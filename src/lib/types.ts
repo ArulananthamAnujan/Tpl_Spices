@@ -33,6 +33,7 @@ export interface Category {
   sort_order: number;
   is_brand: boolean;
   section: 'grocery' | 'clothing';
+  parent_id: string | null;
 }
 
 export interface PromoSlide {

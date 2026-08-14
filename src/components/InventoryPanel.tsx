@@ -111,12 +111,17 @@ export default function InventoryPanel() {
     if (term && !p.name.toLowerCase().includes(term)) return false;
     if (catFilter === 'all') return true;
     if (catFilter === UNCAT) return !p.category_id;
-    return p.category_id === catFilter;
+    // Picking a parent category includes everything in its subcategories.
+    const childIds = categories.filter(c => c.parent_id === catFilter).map(c => c.id);
+    return p.category_id === catFilter || childIds.includes(p.category_id ?? '');
   });
   const groups = new Map<string, { name: string; items: Product[] }>();
   for (const p of filtered) {
     const key = p.category_id ?? UNCAT;
-    const name = p.category?.name ?? 'Uncategorised';
+    // Show the full path so subcategories are obvious, e.g. "Rice › Basmati".
+    const cat = categories.find(c => c.id === p.category_id);
+    const parent = cat?.parent_id ? categories.find(c => c.id === cat.parent_id) : null;
+    const name = cat ? (parent ? `${parent.name} › ${cat.name}` : cat.name) : 'Uncategorised';
     if (!groups.has(key)) groups.set(key, { name, items: [] });
     groups.get(key)!.items.push(p);
   }
@@ -222,7 +227,12 @@ export default function InventoryPanel() {
               <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
                 className="w-full appearance-none px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-tpl-lime">
                 <option value="all">All categories</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {categories.filter(c => !c.parent_id).map(parent => [
+                  <option key={parent.id} value={parent.id}>{parent.name}</option>,
+                  ...categories.filter(c => c.parent_id === parent.id).map(child => (
+                    <option key={child.id} value={child.id}>&nbsp;&nbsp;— {child.name}</option>
+                  )),
+                ])}
                 <option value={UNCAT}>Uncategorised</option>
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />

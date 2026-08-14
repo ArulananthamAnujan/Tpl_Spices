@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Package, Clock, MapPin, ChevronRight, RefreshCw, Filter } from 'lucide-react';
+import { Package, Clock, MapPin, ChevronRight, RefreshCw, Filter, Tag, Boxes } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Order, OrderStatus, formatPrice } from '../lib/types';
 import OrderStatusBadge from '../components/OrderStatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
+import PricingPromotionsPanel from '../components/PricingPromotionsPanel';
+import InventoryPanel from '../components/InventoryPanel';
 
 const STATUS_FLOW: Record<OrderStatus, OrderStatus | null> = {
   new: 'in_progress',
@@ -20,6 +22,7 @@ const STATUS_NEXT_LABEL: Partial<Record<OrderStatus, string>> = {
 };
 
 export default function StaffDashboardPage() {
+  const [view, setView] = useState<'orders' | 'pricing' | 'inventory'>('orders');
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<OrderStatus | 'all'>('all');
@@ -70,13 +73,38 @@ export default function StaffDashboardPage() {
         <div className="flex items-center justify-between mb-8">
           <div>
             <h1 className="font-display text-2xl font-bold text-tpl-dark">Staff Dashboard</h1>
-            <p className="text-gray-500 text-sm mt-1">Manage incoming orders for your store</p>
+            <p className="text-gray-500 text-sm mt-1">Manage orders, pricing and stock for your store</p>
           </div>
-          <button onClick={fetchOrders} className="flex items-center gap-2 px-4 py-2 bg-tpl-forest text-white rounded-xl text-sm font-semibold hover:bg-tpl-mid transition-colors">
-            <RefreshCw className="h-4 w-4" /> Refresh
-          </button>
+          {view === 'orders' && (
+            <button onClick={fetchOrders} className="flex items-center gap-2 px-4 py-2 bg-tpl-forest text-white rounded-xl text-sm font-semibold hover:bg-tpl-mid transition-colors">
+              <RefreshCw className="h-4 w-4" /> Refresh
+            </button>
+          )}
         </div>
 
+        {/* Tabs */}
+        <div className="flex items-center gap-1 mb-6 border-b border-gray-200">
+          {([
+            { id: 'orders', label: 'Orders', icon: <Package className="h-4 w-4" /> },
+            { id: 'pricing', label: 'Pricing & Promos', icon: <Tag className="h-4 w-4" /> },
+            { id: 'inventory', label: 'Inventory', icon: <Boxes className="h-4 w-4" /> },
+          ] as const).map(t => (
+            <button
+              key={t.id}
+              onClick={() => setView(t.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+                view === t.id ? 'border-tpl-forest text-tpl-forest' : 'border-transparent text-gray-500 hover:text-tpl-forest'
+              }`}
+            >
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+
+        {view === 'pricing' && <PricingPromotionsPanel />}
+        {view === 'inventory' && <InventoryPanel />}
+
+        {view === 'orders' && (<>
         {/* Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           {(['new', 'in_progress', 'ready', 'completed'] as OrderStatus[]).map(s => (
@@ -199,6 +227,7 @@ export default function StaffDashboardPage() {
             ))}
           </div>
         )}
+        </>)}
       </div>
     </div>
   );

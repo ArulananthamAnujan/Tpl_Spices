@@ -2,15 +2,16 @@ import { useEffect, useState, useRef } from 'react';
 import {
   Store as StoreIcon, Users, Package, RefreshCw, Plus, Edit2, Trash2,
   CheckCircle, AlertCircle, Megaphone, Upload, X, ToggleLeft, ToggleRight,
-  Image as ImageIcon, Type, Tag, Shirt, Salad, Camera, Search as SearchIcon, Wand2, Loader2, Boxes
+  Image as ImageIcon, Type, Tag, Camera, Search as SearchIcon, Wand2, Loader2, Boxes
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Store, Order, PromoSlide, Category, Product, formatPrice } from '../lib/types';
+import { Store, Order, PromoSlide, Product, formatPrice } from '../lib/types';
 import OrderStatusBadge from '../components/OrderStatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import PricingPromotionsPanel from '../components/PricingPromotionsPanel';
 import InventoryPanel from '../components/InventoryPanel';
 import StaffPanel from '../components/StaffPanel';
+import CategoriesPanel from '../components/CategoriesPanel';
 
 type Tab = 'orders' | 'stores' | 'staff' | 'catalog' | 'categories' | 'products' | 'inventory' | 'pricing' | 'promos';
 
@@ -32,8 +33,6 @@ export default function AdminDashboardPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [slides, setSlides] = useState<PromoSlide[]>([]);
-  const [allCategories, setAllCategories] = useState<Category[]>([]);
-  const [savingCatId, setSavingCatId] = useState<string | null>(null);
 
   // Products image management
   const [products, setProducts] = useState<Product[]>([]);
@@ -103,9 +102,6 @@ export default function AdminDashboardPage() {
     } else if (t === 'promos') {
       const { data } = await supabase.from('promo_slides').select('*').order('sort_order');
       setSlides(data ?? []);
-    } else if (t === 'categories') {
-      const { data } = await supabase.from('categories').select('*').order('sort_order');
-      setAllCategories(data ?? []);
     } else if (t === 'products') {
       const { data } = await supabase.from('products').select('*, category:categories(name, section)').eq('active', true).order('name');
       setProducts(data ?? []);
@@ -518,13 +514,6 @@ export default function AdminDashboardPage() {
       setTimeout(() => setProductActionError(null), 5000);
     }
     setEnhancingProductId(null);
-  };
-
-  const updateCategorySection = async (catId: string, section: 'grocery' | 'clothing') => {
-    setSavingCatId(catId);
-    await supabase.from('categories').update({ section }).eq('id', catId);
-    setAllCategories(prev => prev.map(c => c.id === catId ? { ...c, section } : c));
-    setSavingCatId(null);
   };
 
   // --- Promo Slide CRUD ---
@@ -1495,57 +1484,7 @@ export default function AdminDashboardPage() {
             )}
 
             {/* CATEGORIES TAB */}
-            {tab === 'categories' && (
-              <div className="space-y-3">
-                <div className="bg-white rounded-2xl shadow-card p-6">
-                  <h2 className="font-semibold text-tpl-dark text-lg mb-1">Category Sections</h2>
-                  <p className="text-sm text-gray-500 mb-6">
-                    Assign each category to <strong>Grocery &amp; Spices</strong> or <strong>Clothing</strong>. This controls which nav section it appears under.
-                  </p>
-                  {allCategories.length === 0 ? (
-                    <div className="text-center py-10">
-                      <Tag className="h-10 w-10 text-gray-300 mx-auto mb-3" />
-                      <p className="text-gray-500 text-sm">No categories yet — sync your Square catalogue first.</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-gray-100">
-                      {allCategories.map(cat => (
-                        <div key={cat.id} className="flex items-center justify-between py-3 gap-4">
-                          <div>
-                            <p className="font-medium text-tpl-dark text-sm">{cat.name}</p>
-                            {cat.is_brand && <span className="text-xs text-gray-400">Brand</span>}
-                          </div>
-                          <div className="flex gap-2 flex-shrink-0">
-                            <button
-                              onClick={() => updateCategorySection(cat.id, 'grocery')}
-                              disabled={savingCatId === cat.id}
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                                cat.section === 'grocery'
-                                  ? 'bg-tpl-forest text-white'
-                                  : 'border border-gray-200 text-gray-500 hover:border-tpl-forest hover:text-tpl-forest'
-                              }`}
-                            >
-                              <Salad className="h-3.5 w-3.5" /> Grocery
-                            </button>
-                            <button
-                              onClick={() => updateCategorySection(cat.id, 'clothing')}
-                              disabled={savingCatId === cat.id}
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                                cat.section === 'clothing'
-                                  ? 'bg-tpl-forest text-white'
-                                  : 'border border-gray-200 text-gray-500 hover:border-tpl-forest hover:text-tpl-forest'
-                              }`}
-                            >
-                              <Shirt className="h-3.5 w-3.5" /> Clothing
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            {tab === 'categories' && <CategoriesPanel />}
 
             {/* PRICING & PROMOTIONS TAB */}
             {tab === 'pricing' && <PricingPromotionsPanel />}

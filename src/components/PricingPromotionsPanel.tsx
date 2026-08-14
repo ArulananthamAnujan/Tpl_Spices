@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Search, Tag, Percent, DollarSign, X, CheckSquare, Loader2, Sparkles } from 'lucide-react';
+import { Search, Tag, Percent, DollarSign, X, CheckSquare, Loader2, Sparkles, Check } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Product, ProductVariation, formatPrice } from '../lib/types';
+import { Product, ProductVariation, Category, formatPrice } from '../lib/types';
 import { isPromoActive, promoPriceCents } from '../lib/pricing';
 
 type PromoType = 'percent' | 'fixed' | 'price';
@@ -10,8 +10,16 @@ type PromoType = 'percent' | 'fixed' | 'price';
 // on a drag-selected set of products.
 export default function PricingPromotionsPanel() {
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [catFilter, setCatFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+
+  // Bulk wholesale/retail pricing (independent of promotions)
+  const [bulkWsPrice, setBulkWsPrice] = useState('');
+  const [bulkWsMin, setBulkWsMin] = useState('');
+  const [bulkWsPct, setBulkWsPct] = useState('');
+  const [bulkPriceBusy, setBulkPriceBusy] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [savingId, setSavingId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { retail: string; ws: string; wsMin: string }>>({});
@@ -30,18 +38,24 @@ export default function PricingPromotionsPanel() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from('products')
-      .select('*, category:categories(name), variations:product_variations(*)')
-      .eq('active', true)
-      .order('name');
-    setProducts((data as Product[]) ?? []);
+    const [prodRes, catRes] = await Promise.all([
+      supabase.from('products').select('*, category:categories(name), variations:product_variations(*)').eq('active', true).order('name'),
+      supabase.from('categories').select('*').order('sort_order').order('name'),
+    ]);
+    setProducts((prodRes.data as Product[]) ?? []);
+    setCategories((catRes.data as Category[]) ?? []);
     setLoading(false);
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
-  const visible = products.filter(p => !search || p.name.toLowerCase().includes(search.toLowerCase()));
+  const visible = products.filter(p => {
+    if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (catFilter === 'all') return true;
+    // Selecting a parent category includes its subcategories.
+    const childIds = categories.filter(c => c.parent_id === catFilter).map(c => c.id);
+    return p.category_id === catFilter || childIds.includes(p.category_id ?? '');
+  });
 
   const toggle = (id: string, additive: boolean) => {
     setSelected(prev => {
@@ -116,6 +130,47 @@ export default function PricingPromotionsPanel() {
     setSavingId(null);
   };
 
+  // ---- Bulk wholesale pricing on the selection (no promotion involved) ----
+  const applyBulkWholesale = async () => {
+    if (selected.size === 0) { setToast('Select some products first.'); return; }
+    const min = Math.floor(Number(bulkWsMin));
+    if (!Number.isFinite(min) || min < 1) { setToast('Enter the minimum quantity for wholesale (e.g. 10).'); return; }
+    const flat = bulkWsPrice.trim() === '' ? null : Math.round(parseFloat(bulkWsPrice) * 100);
+    const pct = bulkWsPct.trim() === '' ? null : parseFloat(bulkWsPct);
+    if (flat == null && pct == null) { setToast('Enter either a wholesale price or a % off retail.'); return; }
+    if (flat != null && (!Number.isFinite(flat) || flat < 0)) { setToast('Enter a valid wholesale price.'); return; }
+    if (pct != null && (!Number.isFinite(pct) || pct <= 0 || pct >= 100)) { setToast('Enter a discount between 0 and 100.'); return; }
+
+    setBulkPriceBusy(true);
+    const targets = products.filter(p => selected.has(p.id)).flatMap(p => p.variations ?? []);
+    let ok = 0, failed = 0;
+    for (const v of targets) {
+      // A flat price applies to every item; a % is computed from each retail price.
+      const wsPrice = flat != null ? flat : Math.round((v.price_cents * (100 - (pct as number))) / 100);
+      const { error } = await supabase
+        .from('product_variations')
+        .update({ wholesale_price_cents: wsPrice, wholesale_min_qty: min })
+        .eq('id', v.id);
+      if (error) failed++; else ok++;
+    }
+    await load();
+    setBulkPriceBusy(false);
+    setToast(`Wholesale pricing set on ${ok} item${ok !== 1 ? 's' : ''}${failed ? `, ${failed} failed` : ''}.`);
+  };
+
+  const clearBulkWholesale = async () => {
+    if (selected.size === 0) { setToast('Select some products first.'); return; }
+    setBulkPriceBusy(true);
+    const targets = products.filter(p => selected.has(p.id)).flatMap(p => p.variations ?? []);
+    for (const v of targets) {
+      await supabase.from('product_variations')
+        .update({ wholesale_price_cents: null, wholesale_min_qty: null }).eq('id', v.id);
+    }
+    await load();
+    setBulkPriceBusy(false);
+    setToast('Wholesale pricing removed from the selected items.');
+  };
+
   // ---- Apply / clear promotions on the selection ----
   const applyPromo = async () => {
     if (selected.size === 0) { setToast('Select some products first (click, shift-click, or drag over them).'); return; }
@@ -160,9 +215,48 @@ export default function PricingPromotionsPanel() {
           <Sparkles className="h-5 w-5 text-tpl-forest" /> Pricing &amp; Promotions
         </h2>
         <p className="text-sm text-gray-500 mb-4">
-          Edit retail and wholesale prices inline on each product. To run a promotion, <b>drag a box over the products</b> (or click / shift-click to multi-select), then choose a discount and apply.
+          Edit retail and wholesale prices inline on each product. <b>Drag a box over products</b> (or click / shift-click) to select them, then set wholesale pricing or run a promotion on the whole selection.
         </p>
 
+        {/* Bulk retail/wholesale pricing — no promotion needed */}
+        <div className="rounded-xl border border-gray-200 p-4 mb-4">
+          <p className="text-xs font-semibold text-tpl-dark mb-2 flex items-center gap-1.5">
+            <DollarSign className="h-4 w-4 text-tpl-forest" /> Wholesale pricing for selected items
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-[11px] text-gray-500">Wholesale price ($)
+              <input value={bulkWsPrice} onChange={e => { setBulkWsPrice(e.target.value); if (e.target.value) setBulkWsPct(''); }}
+                type="number" min={0} step="0.01" placeholder="e.g. 8.50"
+                className="block w-28 mt-1 px-2 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
+            </label>
+            <span className="text-[11px] text-gray-400 pb-2">or</span>
+            <label className="text-[11px] text-gray-500">% off retail
+              <input value={bulkWsPct} onChange={e => { setBulkWsPct(e.target.value); if (e.target.value) setBulkWsPrice(''); }}
+                type="number" min={0} max={99} step="1" placeholder="e.g. 15"
+                className="block w-24 mt-1 px-2 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
+            </label>
+            <label className="text-[11px] text-gray-500">Wholesale from qty
+              <input value={bulkWsMin} onChange={e => setBulkWsMin(e.target.value)} type="number" min={1} placeholder="e.g. 10"
+                className="block w-28 mt-1 px-2 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
+            </label>
+            <button onClick={applyBulkWholesale} disabled={bulkPriceBusy}
+              className="px-4 py-2 bg-tpl-forest text-white rounded-xl text-sm font-semibold hover:bg-tpl-mid transition-colors disabled:opacity-40 flex items-center gap-1.5">
+              {bulkPriceBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+              Set on {selected.size} selected
+            </button>
+            <button onClick={clearBulkWholesale} disabled={bulkPriceBusy}
+              className="px-3 py-2 text-gray-500 hover:text-red-500 rounded-xl text-sm font-medium transition-colors">
+              Remove wholesale
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 mt-2">
+            A “% off retail” is worked out per item from its own retail price. Customers get this price once they buy the minimum quantity — no promotion required.
+          </p>
+        </div>
+
+        <p className="text-xs font-semibold text-tpl-dark mb-2 flex items-center gap-1.5">
+          <Tag className="h-4 w-4 text-tpl-forest" /> Promotion for selected items
+        </p>
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="text-[11px] text-gray-500 block mb-1">Discount type</label>
@@ -206,11 +300,21 @@ export default function PricingPromotionsPanel() {
         </div>
 
         <div className="flex items-center gap-3 mt-4">
-          <div className="relative flex-1 min-w-[200px]">
+          <div className="relative flex-1 min-w-[180px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products…"
               className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
           </div>
+          <select value={catFilter} onChange={e => setCatFilter(e.target.value)}
+            className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-tpl-lime">
+            <option value="all">All categories</option>
+            {categories.filter(c => !c.parent_id).map(parent => [
+              <option key={parent.id} value={parent.id}>{parent.name}</option>,
+              ...categories.filter(c => c.parent_id === parent.id).map(child => (
+                <option key={child.id} value={child.id}>&nbsp;&nbsp;— {child.name}</option>
+              )),
+            ])}
+          </select>
           <button onClick={() => setSelected(new Set(visible.map(p => p.id)))}
             className="text-xs px-3 py-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center gap-1.5">
             <CheckSquare className="h-3.5 w-3.5" /> Select all
