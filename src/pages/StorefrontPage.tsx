@@ -242,6 +242,13 @@ export default function StorefrontPage() {
     .filter((p): p is Product => !!p && !shown.some(s => s.id === p.id))
     .slice(0, 6);
 
+  // Once the shopper picks a section, category or search, they came to shop —
+  // drop the full-height hero so products are visible straight away.
+  const isBrowsing = Boolean(
+    searchParams.get('section') || searchParams.get('category') ||
+    searchParams.get('search') || searchQuery.trim() || selectedCategory,
+  );
+
   const openProduct = (p: Product) => {
     recent.push(p.id);
     navigate(`/product/${p.id}`, { state: { store: selectedStore } });
@@ -249,9 +256,10 @@ export default function StorefrontPage() {
 
   return (
     <div className="min-h-screen bg-tpl-cream">
-      <PromoCarousel />
+      {!isBrowsing && <PromoCarousel />}
 
-      {/* Trust / feature strip */}
+      {/* Trust / feature strip — full on the landing page, hidden while shopping */}
+      {!isBrowsing && (
       <div className="bg-tpl-forest text-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-2 md:grid-cols-4 divide-x divide-white/10">
           {[
@@ -270,6 +278,7 @@ export default function StorefrontPage() {
           ))}
         </div>
       </div>
+      )}
 
       {/* Store Selector */}
       <div className="bg-white border-b border-gray-100 py-2 px-4">
