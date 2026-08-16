@@ -44,6 +44,7 @@ export default function StorefrontPage() {
   const [storeDropOpen, setStoreDropOpen] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
+  const [ratings, setRatings] = useState<Record<string, { average: number; count: number }>>({});
 
   // Sorting / filtering / paging (applied client-side over the fetched set)
   const [sortBy, setSortBy] = useState<SortKey>('featured');
@@ -74,6 +75,14 @@ export default function StorefrontPage() {
     });
     supabase.from('categories').select('*').order('sort_order').then(({ data }) => {
       setCategories(data ?? []);
+    });
+    // Star ratings for the cards — one small aggregate query for the catalogue.
+    supabase.from('product_rating_summary').select('*').then(({ data }) => {
+      const m: Record<string, { average: number; count: number }> = {};
+      (data ?? []).forEach((r: any) => {
+        m[r.product_id] = { average: Number(r.average_rating), count: r.review_count };
+      });
+      setRatings(m);
     });
   }, []);
 
@@ -562,6 +571,7 @@ export default function StorefrontPage() {
                       product={product}
                       store={selectedStore}
                       stock={stockMap}
+                      rating={ratings[product.id]}
                       onClick={() => openProduct(product)}
                     />
                   ))}
@@ -587,7 +597,7 @@ export default function StorefrontPage() {
                     </h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
                       {savedProducts.slice(0, 6).map(p => (
-                        <ProductCard key={p.id} product={p} store={selectedStore} stock={stockMap} onClick={() => openProduct(p)} />
+                        <ProductCard key={p.id} product={p} store={selectedStore} stock={stockMap} rating={ratings[p.id]} onClick={() => openProduct(p)} />
                       ))}
                     </div>
                   </section>
@@ -601,7 +611,7 @@ export default function StorefrontPage() {
                     </h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
                       {recentProducts.map(p => (
-                        <ProductCard key={p.id} product={p} store={selectedStore} stock={stockMap} onClick={() => openProduct(p)} />
+                        <ProductCard key={p.id} product={p} store={selectedStore} stock={stockMap} rating={ratings[p.id]} onClick={() => openProduct(p)} />
                       ))}
                     </div>
                   </section>

@@ -201,10 +201,10 @@ export default function Header() {
             </Link>
 
             <Link
-              to="/?promo=1"
+              to="/deals"
               className="px-3 py-1.5 text-sm font-medium rounded-lg transition-colors h-9 flex items-center text-tpl-lime hover:text-white hover:bg-white/15"
             >
-              Promotions
+              Deals
             </Link>
 
             <Link
@@ -258,7 +258,7 @@ export default function Header() {
               {cat.name}
             </Link>
           ))}
-          <Link to="/?promo=1" onClick={() => setMenuOpen(false)} className="block px-3 py-2 text-white/80 hover:text-white rounded-lg text-sm">Promotions</Link>
+          <Link to="/deals" onClick={() => setMenuOpen(false)} className="block px-3 py-2 text-white/80 hover:text-white rounded-lg text-sm">Deals</Link>
           <Link to="/about" onClick={() => setMenuOpen(false)} className="block px-3 py-2 text-white/80 hover:text-white rounded-lg text-sm">About</Link>
           {profile?.role === 'super_admin' && (
             <Link to="/admin" onClick={() => setMenuOpen(false)} className="block px-3 py-2 text-white/80 hover:text-white rounded-lg text-sm">Admin Dashboard</Link>

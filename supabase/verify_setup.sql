@@ -54,6 +54,14 @@ SELECT check_name, status FROM (
     CASE WHEN to_regclass('public.newsletter_subscribers') IS NOT NULL
          THEN 'OK' ELSE 'MISSING' END
   UNION ALL
+  SELECT 12, 'product_reviews table (ratings)',
+    CASE WHEN to_regclass('public.product_reviews') IS NOT NULL
+         THEN 'OK' ELSE 'MISSING' END
+  UNION ALL
+  SELECT 13, 'product_rating_summary view',
+    CASE WHEN to_regclass('public.product_rating_summary') IS NOT NULL
+         THEN 'OK' ELSE 'MISSING' END
+  UNION ALL
   -- Login health: these two are what break sign-in with
   -- "Database error querying schema".
   SELECT 10, 'auth.users has no NULL tokens (login works)',

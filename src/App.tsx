@@ -5,6 +5,7 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
 import StorefrontPage from './pages/StorefrontPage';
+import DealsPage from './pages/DealsPage';
 import ProductDetailPage from './pages/ProductDetailPage';
 import CartPage from './pages/CartPage';
 import CheckoutPage from './pages/CheckoutPage';
@@ -46,6 +47,7 @@ export default function App() {
                   <Routes>
                     <Route path="/" element={<StorefrontPage />} />
                     <Route path="/product/:id" element={<ProductDetailPage />} />
+                    <Route path="/deals" element={<DealsPage />} />
                     <Route path="/cart" element={<CartPage />} />
                     <Route path="/about" element={<AboutPage />} />
                     <Route path="/terms" element={<TermsPage />} />

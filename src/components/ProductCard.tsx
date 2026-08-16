@@ -5,11 +5,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isPromoActive, promoPriceCents, promoLabel } from '../lib/pricing';
 import { useLocalList } from '../lib/useLocalList';
+import { Stars } from './ProductReviews';
 
 interface Props {
   product: Product;
   store: Store | null;
   stock?: Record<string, number>;
+  rating?: { average: number; count: number };
   onClick?: () => void;
 }
 
@@ -23,7 +25,7 @@ const PLACEHOLDER_COLORS = [
   'from-tpl-pale to-tpl-cream',
 ];
 
-export default function ProductCard({ product, store, stock, onClick }: Props) {
+export default function ProductCard({ product, store, stock, rating, onClick }: Props) {
   const { addItem } = useCart();
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
@@ -146,6 +148,12 @@ export default function ProductCard({ product, store, stock, onClick }: Props) {
         <h3 className="font-semibold text-tpl-dark text-sm leading-snug mb-1 line-clamp-2 group-hover:text-tpl-forest transition-colors">
           {product.name}
         </h3>
+        {rating && rating.count > 0 && (
+          <span className="flex items-center gap-1 mb-1">
+            <Stars value={rating.average} />
+            <span className="text-[11px] text-gray-400">({rating.count})</span>
+          </span>
+        )}
         {variations.length > 1 && (
           <p className="text-xs text-gray-400 mb-1">{variations.length} options available</p>
         )}

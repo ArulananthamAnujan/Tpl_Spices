@@ -7,6 +7,7 @@ import { useCart } from '../contexts/CartContext';
 import { isPromoActive, effectiveUnitCents, isWholesaleActive } from '../lib/pricing';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ProductCard from '../components/ProductCard';
+import ProductReviews from '../components/ProductReviews';
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -205,6 +206,9 @@ export default function ProductDetailPage() {
             </div>
           </div>
         </div>
+
+        {/* Ratings & reviews */}
+        {product && <ProductReviews productId={product.id} />}
 
         {/* Related products */}
         {related.length > 0 && (
