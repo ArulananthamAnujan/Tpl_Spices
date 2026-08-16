@@ -50,7 +50,6 @@ export default function AdminDashboardPage() {
   const [showAutoFill, setShowAutoFill] = useState(false);
 
   // AI generation state
-  const [openaiKey, setOpenaiKey] = useState(() => localStorage.getItem('openai_api_key') ?? '');
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [aiSection, setAiSection] = useState<'grocery' | 'clothing' | 'all'>('grocery');
   const [aiOverwrite, setAiOverwrite] = useState(false);
@@ -204,8 +203,6 @@ export default function AdminDashboardPage() {
   };
 
   const runTestGeneration = async () => {
-    if (!openaiKey.trim()) return;
-    localStorage.setItem('openai_api_key', openaiKey.trim());
     const candidate = products.find(p => isGroceryProduct(p) && !p.image_url) ?? products.find(isGroceryProduct);
     if (!candidate) { setAiTestResult({ ok: false, error: 'No grocery products found.' }); return; }
     setAiTesting(true);
@@ -214,7 +211,6 @@ export default function AdminDashboardPage() {
       const categoryName = (candidate as any).category?.name ?? 'grocery';
       const { data, error } = await supabase.functions.invoke('generate-product-image', {
         body: { productId: candidate.id, productName: candidate.name, categoryName, section: 'grocery' },
-        headers: { 'X-OpenAI-Key': openaiKey.trim() },
       });
       // Edge function always returns HTTP 200 — check data.success for the real result
       const invokeError = error?.message;
@@ -233,8 +229,6 @@ export default function AdminDashboardPage() {
   };
 
   const runAiGeneration = async () => {
-    if (!openaiKey.trim()) return;
-    localStorage.setItem('openai_api_key', openaiKey.trim());
     const targets = aiProductTargets();
     if (targets.length === 0) { alert('No products to generate for!'); return; }
     setAiGenerating(true);
@@ -248,7 +242,6 @@ export default function AdminDashboardPage() {
       try {
         const { data, error } = await supabase.functions.invoke('generate-product-image', {
           body: { productId: product.id, productName: product.name, categoryName, section },
-          headers: { 'X-OpenAI-Key': openaiKey.trim() },
         });
         if (error || data?.success === false || !data?.imageUrl) {
           errors++;
@@ -289,8 +282,6 @@ export default function AdminDashboardPage() {
   };
 
   const runTestEnhancement = async () => {
-    if (!openaiKey.trim()) return;
-    localStorage.setItem('openai_api_key', openaiKey.trim());
     const candidate = products.find(p => isRealUploadedPhoto(p.image_url) && !isAiEnhanced(p.image_url) && isGroceryProduct(p));
     if (!candidate) { setEnhanceTestResult({ ok: false, error: 'No grocery products with existing photos found.' }); return; }
     setEnhanceTesting(true);
@@ -299,7 +290,6 @@ export default function AdminDashboardPage() {
       const categoryName = (candidate as any).category?.name ?? 'grocery';
       const { data, error } = await supabase.functions.invoke('generate-product-image', {
         body: { productId: candidate.id, productName: candidate.name, categoryName, section: 'grocery', existingImageUrl: candidate.image_url },
-        headers: { 'X-OpenAI-Key': openaiKey.trim() },
       });
       const invokeError = error?.message;
       const dataError = data?.success === false ? (data?.error ?? 'Unknown error from AI service') : null;
@@ -317,8 +307,6 @@ export default function AdminDashboardPage() {
   };
 
   const runAiEnhancement = async () => {
-    if (!openaiKey.trim()) return;
-    localStorage.setItem('openai_api_key', openaiKey.trim());
     const targets = aiEnhanceTargets();
     if (targets.length === 0) { alert('No products with photos to enhance!'); return; }
     setEnhancing(true);
@@ -332,7 +320,6 @@ export default function AdminDashboardPage() {
       try {
         const { data, error } = await supabase.functions.invoke('generate-product-image', {
           body: { productId: product.id, productName: product.name, categoryName, section, existingImageUrl: product.image_url },
-          headers: { 'X-OpenAI-Key': openaiKey.trim() },
         });
         if (error || data?.success === false || !data?.imageUrl) {
           errors++;
@@ -437,11 +424,6 @@ export default function AdminDashboardPage() {
   };
 
   const enhanceSingleProduct = async (product: Product, mode: 'enhance' | 'generate') => {
-    if (!openaiKey.trim()) {
-      setProductActionError({ id: product.id, msg: 'Enter your OpenAI key in the AI Generate panel first.' });
-      setTimeout(() => setProductActionError(null), 4000);
-      return;
-    }
     setEnhancingProductId(product.id);
     setProductActionError(null);
     try {
@@ -454,7 +436,6 @@ export default function AdminDashboardPage() {
       }
       const { data, error } = await supabase.functions.invoke('generate-product-image', {
         body,
-        headers: { 'X-OpenAI-Key': openaiKey.trim() },
       });
       if (error || data?.success === false || !data?.imageUrl) {
         const msg = data?.error ?? error?.message ?? 'Generation failed';
@@ -821,29 +802,12 @@ export default function AdminDashboardPage() {
                         onClick={() => setShowAiPanel(v => !v)}
                         className="text-xs px-3 py-1.5 bg-tpl-dark text-white rounded-lg font-medium hover:bg-gray-800 transition-colors shrink-0 ml-3"
                       >
-                        {showAiPanel ? 'Hide' : 'Set Up'}
+                        {showAiPanel ? 'Hide' : 'Open'}
                       </button>
                     </div>
 
                     {showAiPanel && (
                       <div className="mt-4 space-y-4">
-                        {/* API Key */}
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-600 mb-1">
-                            OpenAI API Key
-                            <span className="ml-2 font-normal text-gray-400">(stored locally, never saved to server)</span>
-                          </label>
-                          <input
-                            type="password"
-                            value={openaiKey}
-                            onChange={e => setOpenaiKey(e.target.value)}
-                            placeholder="sk-..."
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-gray-400"
-                          />
-                          <p className="text-xs text-gray-400 mt-1">
-                            Get your key at platform.openai.com → API Keys. Each image costs ~$0.04 (DALL-E 3 standard).
-                          </p>
-                        </div>
 
                         {/* Section selector */}
                         <div>
@@ -948,7 +912,7 @@ export default function AdminDashboardPage() {
                             {/* Test button */}
                             <button
                               onClick={runTestGeneration}
-                              disabled={!openaiKey.trim() || aiTesting}
+                              disabled={aiTesting}
                               className="w-full py-2 border-2 border-tpl-dark text-tpl-dark text-sm font-semibold rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
                             >
                               {aiTesting ? (
@@ -965,7 +929,7 @@ export default function AdminDashboardPage() {
                             {/* Full generate button */}
                             <button
                               onClick={runAiGeneration}
-                              disabled={!openaiKey.trim() || aiProductTargets().length === 0 || aiTesting}
+                              disabled={aiProductTargets().length === 0 || aiTesting}
                               className="w-full py-2.5 bg-tpl-dark text-white text-sm font-semibold rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-40"
                             >
                               Generate all {aiProductTargets().length} AI photos with DALL-E 3
@@ -997,26 +961,12 @@ export default function AdminDashboardPage() {
                         onClick={() => setShowEnhancePanel(v => !v)}
                         className="text-xs px-3 py-1.5 bg-amber-600 text-white rounded-lg font-medium hover:bg-amber-700 transition-colors shrink-0 ml-3"
                       >
-                        {showEnhancePanel ? 'Hide' : 'Set Up'}
+                        {showEnhancePanel ? 'Hide' : 'Open'}
                       </button>
                     </div>
 
                     {showEnhancePanel && (
                       <div className="mt-4 space-y-4">
-                        {/* API Key (shared with generator) */}
-                        <div>
-                          <label className="block text-xs font-semibold text-gray-600 mb-1">
-                            OpenAI API Key
-                            <span className="ml-2 font-normal text-gray-400">(stored locally, never saved to server)</span>
-                          </label>
-                          <input
-                            type="password"
-                            value={openaiKey}
-                            onChange={e => setOpenaiKey(e.target.value)}
-                            placeholder="sk-..."
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400"
-                          />
-                        </div>
 
                         {/* Section selector */}
                         <div>
@@ -1105,7 +1055,7 @@ export default function AdminDashboardPage() {
                             )}
                             <button
                               onClick={runTestEnhancement}
-                              disabled={!openaiKey.trim() || enhanceTesting}
+                              disabled={enhanceTesting}
                               className="w-full py-2 border-2 border-amber-600 text-amber-700 text-sm font-semibold rounded-lg hover:bg-amber-50 transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
                             >
                               {enhanceTesting ? (
@@ -1120,7 +1070,7 @@ export default function AdminDashboardPage() {
                             </button>
                             <button
                               onClick={runAiEnhancement}
-                              disabled={!openaiKey.trim() || aiEnhanceTargets().length === 0 || enhanceTesting}
+                              disabled={aiEnhanceTargets().length === 0 || enhanceTesting}
                               className="w-full py-2.5 bg-amber-600 text-white text-sm font-semibold rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-40"
                             >
                               Enhance all {aiEnhanceTargets().length} existing photos

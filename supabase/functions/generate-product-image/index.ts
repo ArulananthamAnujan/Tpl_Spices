@@ -198,9 +198,15 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
-  const openaiKey = req.headers.get("X-OpenAI-Key");
+  // The key lives as a Supabase secret, not in the browser: a key shipped to
+  // the client is readable by anyone with devtools on that machine, and it
+  // meant every admin had to paste it before the buttons did anything.
+  const openaiKey = Deno.env.get("OPENAI_API_KEY");
   if (!openaiKey) {
-    return ok({ success: false, error: "Missing X-OpenAI-Key header. Enter your OpenAI API key in the panel." });
+    return ok({
+      success: false,
+      error: "AI photos are not configured. An administrator needs to add OPENAI_API_KEY in Supabase → Edge Functions → Secrets.",
+    });
   }
 
   let body: {
