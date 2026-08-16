@@ -5,30 +5,13 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Store, Profile, UserRole } from '../lib/types';
+import { callFunction } from '../lib/callFunction';
 
 const ROLE_LABEL: Record<string, string> = {
   super_admin: 'Super Admin',
   staff: 'Staff',
   customer: 'Customer',
 };
-
-// Calls the admin-only manage-staff edge function (service-role work such as
-// creating auth accounts can't happen from the browser).
-async function callManageStaff(payload: Record<string, unknown>) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/manage-staff`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${session?.access_token ?? ''}`,
-      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string,
-    },
-    body: JSON.stringify(payload),
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error ?? `Request failed (${res.status})`);
-  return body;
-}
 
 function randomPassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
@@ -82,7 +65,7 @@ export default function StaffPanel() {
     if (cPassword.length < 8) { flash('Password must be at least 8 characters.', true); return; }
     setCreating(true);
     try {
-      await callManageStaff({
+      await callFunction('manage-staff', {
         action: 'create',
         email: cEmail,
         password: cPassword,
@@ -118,7 +101,7 @@ export default function StaffPanel() {
     if (!pw) return;
     setBusyId(p.id);
     try {
-      await callManageStaff({ action: 'reset_password', user_id: p.id, password: pw });
+      await callFunction('manage-staff', { action: 'reset_password', user_id: p.id, password: pw });
       flash(`Password updated. New password: ${pw}`);
     } catch (e) { flash((e as Error).message, true); }
     setBusyId(null);
@@ -128,7 +111,7 @@ export default function StaffPanel() {
     if (!window.confirm(`Permanently delete the account for ${p.email ?? p.full_name}? This cannot be undone.`)) return;
     setBusyId(p.id);
     try {
-      await callManageStaff({ action: 'delete', user_id: p.id });
+      await callFunction('manage-staff', { action: 'delete', user_id: p.id });
       flash('Account deleted.');
       await load();
     } catch (e) { flash((e as Error).message, true); }

@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { Product, ProductVariation, Category, formatPrice } from '../lib/types';
 import { isPromoActive, promoPriceCents } from '../lib/pricing';
 import { useAuth } from '../contexts/AuthContext';
+import { callFunction } from '../lib/callFunction';
 
 type PromoType = 'percent' | 'fixed' | 'price';
 
@@ -156,24 +157,10 @@ export default function PricingPromotionsPanel() {
   const syncFromSquare = async () => {
     setSyncing(true); setSyncMsg('');
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-catalog`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${session?.access_token ?? ''}`,
-          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string,
-        },
-        body: JSON.stringify(
-          tokenInput.trim() ? { square_token: tokenInput.trim(), square_env: envInput } : {},
-        ),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // No stored secret — let them paste a token just this once.
-        if (/access token/i.test(body.error ?? '')) setNeedToken(true);
-        throw new Error(body.error ?? `Sync failed (${res.status})`);
-      }
+      const body = await callFunction<any>(
+        'sync-catalog',
+        tokenInput.trim() ? { square_token: tokenInput.trim(), square_env: envInput } : {},
+      );
       setNeedToken(false);
       const inv = body.inventoryUpdated ?? 0;
       const notes = (body.inventoryNotes ?? []).join(' ');
@@ -184,7 +171,9 @@ export default function PricingPromotionsPanel() {
       );
       await load();
     } catch (e) {
-      setSyncMsg(`Error: ${(e as Error).message}`);
+      const msg = (e as Error).message;
+      if (/access token/i.test(msg)) setNeedToken(true);
+      setSyncMsg(`Error: ${msg}`);
     }
     setSyncing(false);
   };
