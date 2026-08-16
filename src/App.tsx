@@ -4,6 +4,7 @@ import { CartProvider } from './contexts/CartContext';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import ProtectedRoute from './components/ProtectedRoute';
+import ScrollToTop from './components/ScrollToTop';
 import StorefrontPage from './pages/StorefrontPage';
 import DealsPage from './pages/DealsPage';
 import ProductDetailPage from './pages/ProductDetailPage';
@@ -32,6 +33,7 @@ function Layout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <AuthProvider>
         <CartProvider>
           <Routes>
