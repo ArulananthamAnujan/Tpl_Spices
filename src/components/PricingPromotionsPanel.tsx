@@ -1,14 +1,16 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Search, Tag, Percent, DollarSign, X, CheckSquare, Loader2, Sparkles, Check, FolderTree } from 'lucide-react';
+import { Search, Tag, Percent, DollarSign, X, CheckSquare, Loader2, Sparkles, Check, FolderTree, RefreshCw, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Product, ProductVariation, Category, formatPrice } from '../lib/types';
 import { isPromoActive, promoPriceCents } from '../lib/pricing';
+import { useAuth } from '../contexts/AuthContext';
 
 type PromoType = 'percent' | 'fixed' | 'price';
 
 // Admin/staff tool: edit retail + wholesale prices inline, and run promotions
 // on a drag-selected set of products.
 export default function PricingPromotionsPanel() {
+  const { profile } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [catFilter, setCatFilter] = useState('all');
@@ -24,6 +26,11 @@ export default function PricingPromotionsPanel() {
   // Bulk category assignment
   const [moveCat, setMoveCat] = useState('');
   const [moveBusy, setMoveBusy] = useState(false);
+
+  // Square sync + "still needs pricing" filter
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState('');
+  const [needsPriceOnly, setNeedsPriceOnly] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [savingId, setSavingId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { retail: string; ws: string; wsMin: string }>>({});
@@ -53,7 +60,12 @@ export default function PricingPromotionsPanel() {
 
   useEffect(() => { load(); }, [load]);
 
+  // A product still needs pricing if any variation has no wholesale tier set.
+  const needsPricing = (p: Product) =>
+    (p.variations ?? []).some(v => v.wholesale_price_cents == null || v.wholesale_min_qty == null);
+
   const visible = products.filter(p => {
+    if (needsPriceOnly && !needsPricing(p)) return false;
     if (search && !p.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (catFilter === 'all') return true;
     // Selecting a parent category includes its subcategories.
@@ -133,6 +145,31 @@ export default function PricingPromotionsPanel() {
     if (error) setToast(error.message);
     else { setToast('Saved.'); await load(); setDrafts(prev => { const n = { ...prev }; delete n[v.id]; return n; }); }
     setSavingId(null);
+  };
+
+  // Pull the latest catalogue from Square. The edge function falls back to the
+  // SQUARE_ACCESS_TOKEN secret, so there's nothing to paste here.
+  const syncFromSquare = async () => {
+    setSyncing(true); setSyncMsg('');
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-catalog`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session?.access_token ?? ''}`,
+          apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string,
+        },
+        body: JSON.stringify({}),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `Sync failed (${res.status})`);
+      setSyncMsg(`Synced ${body.products ?? 0} products and ${body.variations ?? 0} prices from Square.`);
+      await load();
+    } catch (e) {
+      setSyncMsg(`Error: ${(e as Error).message}`);
+    }
+    setSyncing(false);
   };
 
   // ---- Move the selected products into a category / subcategory ----
@@ -240,9 +277,23 @@ export default function PricingPromotionsPanel() {
     <div className="space-y-4">
       {/* Header + promotion controls */}
       <div className="bg-white rounded-2xl shadow-card p-6">
-        <h2 className="font-semibold text-tpl-dark text-lg mb-1 flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-tpl-forest" /> Pricing &amp; Promotions
-        </h2>
+        <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
+          <h2 className="font-semibold text-tpl-dark text-lg flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-tpl-forest" /> Pricing &amp; Promotions
+          </h2>
+          {profile?.role === 'super_admin' && (
+            <button onClick={syncFromSquare} disabled={syncing}
+              className="px-4 py-2 border border-tpl-forest text-tpl-forest rounded-xl text-sm font-semibold hover:bg-tpl-pale transition-colors disabled:opacity-50 flex items-center gap-2">
+              {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {syncing ? 'Syncing…' : 'Sync from Square'}
+            </button>
+          )}
+        </div>
+        {syncMsg && (
+          <div className={`text-sm px-3 py-2 rounded-xl mb-3 ${syncMsg.startsWith('Error') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-tpl-pale text-tpl-forest'}`}>
+            {syncMsg}
+          </div>
+        )}
         <p className="text-sm text-gray-500 mb-4">
           Edit retail and wholesale prices inline on each product. <b>Drag a box over products</b> (or click / shift-click) to select them, then set wholesale pricing or run a promotion on the whole selection.
         </p>
@@ -372,6 +423,13 @@ export default function PricingPromotionsPanel() {
               )),
             ])}
           </select>
+          <button onClick={() => setNeedsPriceOnly(v => !v)}
+            className={`text-xs px-3 py-2 rounded-xl border flex items-center gap-1.5 transition-colors ${
+              needsPriceOnly ? 'bg-amber-50 border-amber-300 text-amber-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+            }`}>
+            <AlertCircle className="h-3.5 w-3.5" />
+            Needs wholesale price ({products.filter(needsPricing).length})
+          </button>
           <button onClick={() => setSelected(new Set(visible.map(p => p.id)))}
             className="text-xs px-3 py-2 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50 flex items-center gap-1.5">
             <CheckSquare className="h-3.5 w-3.5" /> Select all
