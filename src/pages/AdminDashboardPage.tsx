@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import {
-  Store as StoreIcon, Users, Package, RefreshCw, Plus, Edit2, Trash2,
+  Store as StoreIcon, Users, Package, LayoutDashboard, RefreshCw, Plus, Edit2, Trash2,
   CheckCircle, AlertCircle, Megaphone, Upload, X, ToggleLeft, ToggleRight,
   Image as ImageIcon, Type, Tag, Camera, Search as SearchIcon, Wand2, Loader2, Boxes
 } from 'lucide-react';
@@ -12,8 +12,9 @@ import PricingPromotionsPanel from '../components/PricingPromotionsPanel';
 import InventoryPanel from '../components/InventoryPanel';
 import StaffPanel from '../components/StaffPanel';
 import CategoriesPanel from '../components/CategoriesPanel';
+import OverviewPanel from '../components/OverviewPanel';
 
-type Tab = 'orders' | 'stores' | 'staff' | 'catalog' | 'categories' | 'products' | 'inventory' | 'pricing' | 'promos';
+type Tab = 'overview' | 'orders' | 'stores' | 'staff' | 'catalog' | 'categories' | 'products' | 'inventory' | 'pricing' | 'promos';
 
 const EMPTY_SLIDE: Partial<PromoSlide> = {
   title: '',
@@ -29,7 +30,7 @@ const EMPTY_SLIDE: Partial<PromoSlide> = {
 };
 
 export default function AdminDashboardPage() {
-  const [tab, setTab] = useState<Tab>('orders');
+  const [tab, setTab] = useState<Tab>('overview');
   const [orders, setOrders] = useState<Order[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [slides, setSlides] = useState<PromoSlide[]>([]);
@@ -586,6 +587,7 @@ export default function AdminDashboardPage() {
   };
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: 'overview', label: 'Overview', icon: <LayoutDashboard className="h-4 w-4" /> },
     { id: 'orders', label: 'All Orders', icon: <Package className="h-4 w-4" /> },
     { id: 'stores', label: 'Stores', icon: <StoreIcon className="h-4 w-4" /> },
     { id: 'staff', label: 'Staff', icon: <Users className="h-4 w-4" /> },
@@ -622,6 +624,9 @@ export default function AdminDashboardPage() {
           <div className="flex justify-center py-20"><LoadingSpinner size="lg" /></div>
         ) : (
           <>
+            {/* OVERVIEW TAB */}
+            {tab === 'overview' && <OverviewPanel />}
+
             {/* ORDERS TAB */}
             {tab === 'orders' && (
               <div className="space-y-3">

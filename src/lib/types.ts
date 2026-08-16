@@ -62,6 +62,7 @@ export interface Product {
   image_url: string | null;
   active: boolean;
   brand: string | null;
+  created_at?: string;
   category_overridden?: boolean;
   category?: Category;
   variations?: ProductVariation[];
