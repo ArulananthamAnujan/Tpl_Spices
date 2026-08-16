@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Tag, Plus, Salad, Shirt, Trash2, Edit2, Check, X, Loader2, CornerDownRight, GripVertical,
-  Package, Search as SearchIcon,
+  Package, Search as SearchIcon, ChevronUp, ChevronDown, CornerUpLeft,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Category, Product } from '../lib/types';
@@ -191,6 +191,49 @@ export default function CategoriesPanel() {
     setBusyId(null);
   };
 
+  // Dragging across a long, scrolling list is fiddly, so every move is also
+  // available as an explicit control that can't miss its target.
+  const siblingsOf = (cat: Category) =>
+    cat.parent_id ? childrenOf(cat.parent_id) : topLevel(cat.section as Section);
+
+  const nudge = async (cat: Category, dir: -1 | 1) => {
+    const list = siblingsOf(cat);
+    const i = list.findIndex(c => c.id === cat.id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= list.length) return;
+    setBusyId(cat.id);
+    const next = [...list];
+    [next[i], next[j]] = [next[j], next[i]];
+    await persistOrder(next);
+    await load();
+    setBusyId(null);
+  };
+
+  // One control for both "switch section" and "make a subcategory of X".
+  const moveTo = async (cat: Category, value: string) => {
+    if (!value) return;
+    setBusyId(cat.id);
+    let error;
+    if (value.startsWith('sec:')) {
+      const section = value.slice(4) as Section;
+      ({ error } = await supabase.from('categories')
+        .update({ section, parent_id: null }).eq('id', cat.id));
+      if (!error) flash(`“${cat.name}” moved to ${SECTIONS.find(s => s.key === section)!.label}.`);
+    } else {
+      const parentId = value.slice(4);
+      if (childrenOf(cat.id).length > 0) {
+        flash(`“${cat.name}” has subcategories, so it can't become one. Move those out first.`, true);
+        setBusyId(null);
+        return;
+      }
+      ({ error } = await supabase.from('categories')
+        .update({ parent_id: parentId }).eq('id', cat.id));
+      if (!error) flash(`“${cat.name}” is now under “${byId(parentId)?.name}”.`);
+    }
+    if (error) flash(error.message, true); else await load();
+    setBusyId(null);
+  };
+
   const clearDrag = () => { setDragId(null); setOverNest(null); setOverGap(null); setOverSection(null); };
 
   // ------------------------------------------------------------------ view
@@ -201,7 +244,9 @@ export default function CategoriesPanel() {
       onDragOver={e => { e.preventDefault(); e.stopPropagation(); setOverGap(beforeId); setOverNest(null); }}
       onDragLeave={() => setOverGap(g => (g === beforeId ? null : g))}
       onDrop={e => { e.preventDefault(); e.stopPropagation(); dropToGap(beforeId, section); clearDrag(); }}
-      className={`h-2 -my-1 rounded transition-colors ${overGap === beforeId ? 'bg-tpl-lime' : 'bg-transparent'}`}
+      className={`rounded transition-all ${
+        overGap === beforeId ? 'h-6 bg-tpl-lime/60 border-2 border-dashed border-tpl-forest my-1' : 'h-3 -my-0.5'
+      }`}
     />
   );
 
@@ -284,7 +329,11 @@ export default function CategoriesPanel() {
         onDragEnd={clearDrag}
         onDragOver={e => {
           if (isChild || !dragId || dragId === cat.id) return;
-          e.preventDefault(); e.stopPropagation(); setOverNest(cat.id); setOverGap(null);
+          e.preventDefault();
+          const r = e.currentTarget.getBoundingClientRect();
+          const nearMiddle = e.clientY > r.top + r.height * 0.28 && e.clientY < r.bottom - r.height * 0.28;
+          if (nearMiddle) { e.stopPropagation(); setOverNest(cat.id); setOverGap(null); }
+          else setOverNest(n => (n === cat.id ? null : n));
         }}
         onDragLeave={() => setOverNest(n => (n === cat.id ? null : n))}
         onDrop={e => {
@@ -296,7 +345,17 @@ export default function CategoriesPanel() {
         } ${dragging ? 'opacity-40' : ''} ${nestTarget ? 'ring-2 ring-tpl-forest bg-tpl-pale/50' : 'hover:bg-gray-50'}`}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <GripVertical className="h-4 w-4 text-gray-300 cursor-grab active:cursor-grabbing flex-shrink-0" />
+          <span title="Drag to move" className="flex-shrink-0"><GripVertical className="h-4 w-4 text-gray-300 cursor-grab active:cursor-grabbing" /></span>
+          <span className="flex flex-col flex-shrink-0">
+            <button onClick={() => nudge(cat, -1)} disabled={busyId === cat.id} title="Move up"
+              className="text-gray-300 hover:text-tpl-forest transition-colors leading-none disabled:opacity-30">
+              <ChevronUp className="h-3.5 w-3.5" />
+            </button>
+            <button onClick={() => nudge(cat, 1)} disabled={busyId === cat.id} title="Move down"
+              className="text-gray-300 hover:text-tpl-forest transition-colors leading-none disabled:opacity-30">
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+          </span>
           {isChild && <CornerDownRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />}
           {editId === cat.id ? (
             <div className="flex items-center gap-1.5">
@@ -333,7 +392,7 @@ export default function CategoriesPanel() {
               <Plus className="h-3 w-3" /> Sub
             </button>
           )}
-          {isChild && (
+          {isChild ? (
             <button
               onClick={async () => {
                 setBusyId(cat.id);
@@ -342,9 +401,28 @@ export default function CategoriesPanel() {
                 setBusyId(null);
               }}
               title="Move out to top level"
-              className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-tpl-forest hover:text-tpl-forest transition-colors">
-              Move out
+              className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-tpl-forest hover:text-tpl-forest transition-colors flex items-center gap-1">
+              <CornerUpLeft className="h-3 w-3" /> Move out
             </button>
+          ) : (
+            <select
+              value=""
+              onChange={e => { moveTo(cat, e.target.value); e.currentTarget.value = ''; }}
+              disabled={busyId === cat.id}
+              title="Move this category"
+              className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 text-gray-600 bg-white hover:border-tpl-forest focus:outline-none focus:ring-2 focus:ring-tpl-lime max-w-[110px]">
+              <option value="">Move to…</option>
+              <optgroup label="Section">
+                {SECTIONS.map(sc => (
+                  <option key={sc.key} value={`sec:${sc.key}`}>{sc.label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Make a subcategory of">
+                {cats
+                  .filter(c => !c.parent_id && c.id !== cat.id)
+                  .map(c => <option key={c.id} value={`par:${c.id}`}>{c.name}</option>)}
+              </optgroup>
+            </select>
           )}
           <button onClick={() => { setEditId(cat.id); setEditName(cat.name); }} title="Rename"
             className="p-1.5 text-gray-400 hover:text-tpl-forest transition-colors"><Edit2 className="h-3.5 w-3.5" /></button>
@@ -363,9 +441,9 @@ export default function CategoriesPanel() {
           <Tag className="h-5 w-5 text-tpl-forest" /> Categories
         </h2>
         <p className="text-sm text-gray-500 mb-1">
-          This is exactly what shoppers see. <b>Drag a category</b> to reorder it, drop it on the other
-          panel to switch it between <b>Grocery &amp; Spices</b> and <b>Clothing</b>, or drop it
-          <b> on top of another category</b> to make it a subcategory.
+          This is exactly what shoppers see. Use the <b>▲▼ arrows</b> to reorder and the
+          <b> “Move to…” </b> menu to switch section or turn a category into a subcategory —
+          or drag rows if you prefer. <b>Items (N)</b> adds and removes the products inside each one.
         </p>
         <p className="text-xs text-gray-400 mb-4">The order here is the order in the storefront sidebar. Subcategories always follow their parent's section.</p>
 
@@ -463,6 +541,32 @@ export default function CategoriesPanel() {
                           {itemsFor === child.id && <ItemsDrawer cat={child} />}
                         </div>
                       ))}
+                      {cat.id === tops[tops.length - 1].id && (
+                        <div
+                          onDragOver={e => { e.preventDefault(); setOverGap(`end-${sec.key}`); setOverNest(null); }}
+                          onDragLeave={() => setOverGap(g => (g === `end-${sec.key}` ? null : g))}
+                          onDrop={async e => {
+                            e.preventDefault();
+                            const moving = dragId ? byId(dragId) : null;
+                            clearDrag();
+                            if (!moving) return;
+                            setBusyId(moving.id);
+                            if (moving.section !== sec.key || moving.parent_id) {
+                              await supabase.from('categories')
+                                .update({ section: sec.key, parent_id: null }).eq('id', moving.id);
+                            }
+                            const rest = topLevel(sec.key).filter(c => c.id !== moving.id);
+                            await persistOrder([...rest, { ...moving, section: sec.key, parent_id: null }]);
+                            await load();
+                            setBusyId(null);
+                          }}
+                          className={`rounded transition-all ${
+                            overGap === `end-${sec.key}`
+                              ? 'h-6 bg-tpl-lime/60 border-2 border-dashed border-tpl-forest my-1'
+                              : 'h-3'
+                          }`}
+                        />
+                      )}
                       {subParent === cat.id && (
                         <div className="ml-8 pb-2 flex items-center gap-2">
                           <input value={subName} onChange={e => setSubName(e.target.value)} autoFocus
