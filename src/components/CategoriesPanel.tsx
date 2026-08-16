@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Tag, Plus, Salad, Shirt, Trash2, Edit2, Check, X, Loader2, CornerDownRight, GripVertical,
+  Package, Search as SearchIcon,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Category } from '../lib/types';
+import { Category, Product } from '../lib/types';
 
 type Section = 'grocery' | 'clothing';
 
@@ -32,6 +33,12 @@ export default function CategoriesPanel() {
   const [editName, setEditName] = useState('');
 
   // Drag state: what's moving, and where it would land.
+  // Per-category product assignment
+  const [products, setProducts] = useState<Product[]>([]);
+  const [itemsFor, setItemsFor] = useState<string | null>(null);
+  const [itemSearch, setItemSearch] = useState('');
+  const [movingProduct, setMovingProduct] = useState<string | null>(null);
+
   const [dragId, setDragId] = useState<string | null>(null);
   const [overNest, setOverNest] = useState<string | null>(null);   // drop onto a row -> nest under it
   const [overGap, setOverGap] = useState<string | null>(null);     // drop in a gap -> reorder before this id
@@ -42,10 +49,30 @@ export default function CategoriesPanel() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase.from('categories').select('*').order('sort_order').order('name');
-    setCats((data as Category[]) ?? []);
+    const [catRes, prodRes] = await Promise.all([
+      supabase.from('categories').select('*').order('sort_order').order('name'),
+      supabase.from('products').select('id, name, category_id').eq('active', true).order('name'),
+    ]);
+    setCats((catRes.data as Category[]) ?? []);
+    setProducts((prodRes.data as Product[]) ?? []);
     setLoading(false);
   }, []);
+
+  const productsIn = (catId: string) => products.filter(p => p.category_id === catId);
+
+  // category_overridden tells the Square sync to leave this placement alone.
+  const setProductCategory = async (productId: string, categoryId: string | null) => {
+    setMovingProduct(productId);
+    const { error } = await supabase
+      .from('products')
+      .update({ category_id: categoryId, category_overridden: true })
+      .eq('id', productId);
+    if (error) flash(error.message, true);
+    else {
+      setProducts(prev => prev.map(p => (p.id === productId ? { ...p, category_id: categoryId } : p)));
+    }
+    setMovingProduct(null);
+  };
   useEffect(() => { load(); }, [load]);
 
   const topLevel = (s: Section) => cats.filter(c => c.section === s && !c.parent_id);
@@ -178,6 +205,75 @@ export default function CategoriesPanel() {
     />
   );
 
+  // Add / remove products for one category, without leaving this screen.
+  const ItemsDrawer = ({ cat }: { cat: Category }) => {
+    const assigned = productsIn(cat.id);
+    const term = itemSearch.trim().toLowerCase();
+    const candidates = term
+      ? products.filter(p => p.category_id !== cat.id && p.name.toLowerCase().includes(term)).slice(0, 25)
+      : [];
+    return (
+      <div className="ml-8 mb-2 border border-tpl-forest/20 rounded-xl bg-white p-3 space-y-3">
+        <div>
+          <p className="text-xs font-semibold text-tpl-dark mb-1.5">
+            In “{cat.name}” · {assigned.length} item{assigned.length !== 1 ? 's' : ''}
+          </p>
+          {assigned.length === 0 ? (
+            <p className="text-xs text-gray-400 italic">Nothing here yet — search below to add products.</p>
+          ) : (
+            <div className="max-h-40 overflow-y-auto divide-y divide-gray-50">
+              {assigned.map(p => (
+                <div key={p.id} className="flex items-center justify-between gap-2 py-1.5">
+                  <span className="text-xs text-gray-700 truncate">{p.name}</span>
+                  <button onClick={() => setProductCategory(p.id, null)} disabled={movingProduct === p.id}
+                    title="Remove from this category"
+                    className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0">
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <div className="relative">
+            <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+            <input value={itemSearch} onChange={e => setItemSearch(e.target.value)}
+              placeholder={`Search products to add to ${cat.name}…`}
+              className="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
+          </div>
+          {term && (
+            candidates.length === 0 ? (
+              <p className="text-xs text-gray-400 italic mt-2">No other products match “{itemSearch}”.</p>
+            ) : (
+              <div className="max-h-48 overflow-y-auto divide-y divide-gray-50 mt-1.5">
+                {candidates.map(p => {
+                  const current = p.category_id ? cats.find(c => c.id === p.category_id) : null;
+                  return (
+                    <div key={p.id} className="flex items-center justify-between gap-2 py-1.5">
+                      <span className="text-xs text-gray-700 truncate">
+                        {p.name}
+                        {current && <span className="text-gray-400"> · in {current.name}</span>}
+                      </span>
+                      <button onClick={() => setProductCategory(p.id, cat.id)} disabled={movingProduct === p.id}
+                        className="text-[11px] px-2 py-1 bg-tpl-forest text-white rounded-lg font-medium hover:bg-tpl-mid transition-colors disabled:opacity-40 flex-shrink-0">
+                        {movingProduct === p.id ? '…' : 'Add'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          )}
+          <p className="text-[10px] text-gray-400 mt-1.5">
+            Moving a product here keeps it here — the Square sync won't move it back.
+          </p>
+        </div>
+      </div>
+    );
+  };
+
   const Row = ({ cat, isChild, section }: { cat: Category; isChild: boolean; section: Section }) => {
     const dragging = dragId === cat.id;
     const nestTarget = overNest === cat.id && dragId && dragId !== cat.id;
@@ -220,6 +316,16 @@ export default function CategoriesPanel() {
         </div>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
+          <button
+            onClick={() => { setItemsFor(itemsFor === cat.id ? null : cat.id); setItemSearch(''); }}
+            title="Add or remove products in this category"
+            className={`text-[11px] px-2 py-1 rounded-lg border transition-colors flex items-center gap-1 ${
+              itemsFor === cat.id
+                ? 'border-tpl-forest bg-tpl-pale text-tpl-forest'
+                : 'border-gray-200 text-gray-600 hover:border-tpl-forest hover:text-tpl-forest'
+            }`}>
+            <Package className="h-3 w-3" /> Items ({productsIn(cat.id).length})
+          </button>
           {!isChild && (
             <button onClick={() => { setSubParent(subParent === cat.id ? null : cat.id); setSubName(''); }}
               title="Add subcategory"
@@ -284,6 +390,34 @@ export default function CategoriesPanel() {
         </div>
       </div>
 
+      {/* Duplicates happen when a locally-seeded category and a Square one share
+          a name; flag them so they can be merged rather than confusing shoppers. */}
+      {(() => {
+        const counts = new Map<string, Category[]>();
+        cats.filter(c => !c.parent_id).forEach(c => {
+          const k = c.name.trim().toLowerCase();
+          counts.set(k, [...(counts.get(k) ?? []), c]);
+        });
+        const dupes = [...counts.values()].filter(g => g.length > 1);
+        if (dupes.length === 0) return null;
+        return (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+            <p className="font-semibold mb-1">Duplicate categories</p>
+            <p className="text-xs mb-2">
+              These names appear more than once, so shoppers see them twice in the menu. Move any products
+              across with <b>Items</b>, then delete the empty one.
+            </p>
+            <ul className="text-xs space-y-0.5">
+              {dupes.map(g => (
+                <li key={g[0].name}>
+                  <b>{g[0].name}</b> — {g.map(c => `${productsIn(c.id).length} item${productsIn(c.id).length !== 1 ? 's' : ''}`).join(' and ')}
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
+
       {toast && (
         <div className={`text-sm px-4 py-2.5 rounded-xl ${toast.bad ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-tpl-dark text-white'}`}>
           {toast.msg}
@@ -322,8 +456,12 @@ export default function CategoriesPanel() {
                     <div key={cat.id}>
                       <Gap beforeId={cat.id} section={sec.key} />
                       <Row cat={cat} isChild={false} section={sec.key} />
+                      {itemsFor === cat.id && <ItemsDrawer cat={cat} />}
                       {childrenOf(cat.id).map(child => (
-                        <Row key={child.id} cat={child} isChild section={sec.key} />
+                        <div key={child.id}>
+                          <Row cat={child} isChild section={sec.key} />
+                          {itemsFor === child.id && <ItemsDrawer cat={child} />}
+                        </div>
                       ))}
                       {subParent === cat.id && (
                         <div className="ml-8 pb-2 flex items-center gap-2">
