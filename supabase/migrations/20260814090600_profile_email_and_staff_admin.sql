@@ -25,10 +25,16 @@ WHERE u.id = p.id
   AND p.email IS DISTINCT FROM u.email;
 
 -- Capture the email for every future sign-up.
+--
+-- IMPORTANT: this trigger is fired by the Auth service (GoTrue), which runs
+-- with its own search_path — not public. It must therefore keep
+-- `SET search_path = public` and schema-qualify the table, exactly as the
+-- earlier search_path fix established. Without that, every sign-in and
+-- sign-up fails with "Database error querying schema".
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS trigger AS $$
 BEGIN
-  INSERT INTO profiles (id, role, full_name, email)
+  INSERT INTO public.profiles (id, role, full_name, email)
   VALUES (
     new.id,
     'customer',
@@ -38,7 +44,7 @@ BEGIN
   ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email;
   RETURN new;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created

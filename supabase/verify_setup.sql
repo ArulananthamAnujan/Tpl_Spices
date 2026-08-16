@@ -53,6 +53,22 @@ SELECT check_name, status FROM (
   SELECT 9, 'newsletter_subscribers table',
     CASE WHEN to_regclass('public.newsletter_subscribers') IS NOT NULL
          THEN 'OK' ELSE 'MISSING' END
+  UNION ALL
+  -- Login health: these two are what break sign-in with
+  -- "Database error querying schema".
+  SELECT 10, 'auth.users has no NULL tokens (login works)',
+    CASE WHEN NOT EXISTS (
+           SELECT 1 FROM auth.users
+           WHERE confirmation_token IS NULL OR recovery_token IS NULL
+              OR email_change IS NULL OR email_change_token_new IS NULL
+         ) THEN 'OK' ELSE 'MISSING' END
+  UNION ALL
+  SELECT 11, 'handle_new_user() has search_path set',
+    CASE WHEN EXISTS (
+           SELECT 1 FROM pg_proc
+           WHERE proname = 'handle_new_user'
+             AND array_to_string(proconfig, ',') LIKE '%search_path%'
+         ) THEN 'OK' ELSE 'MISSING' END
 ) checks
 ORDER BY ord;
 

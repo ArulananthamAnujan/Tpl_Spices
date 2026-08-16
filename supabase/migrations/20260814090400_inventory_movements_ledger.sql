@@ -84,7 +84,7 @@ BEGIN
   DO UPDATE SET quantity = store_inventory.quantity + NEW.delta;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS trg_apply_inventory_movement ON inventory_movements;
 CREATE TRIGGER trg_apply_inventory_movement
@@ -136,7 +136,7 @@ BEGIN
 
   RETURN new_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 GRANT EXECUTE ON FUNCTION record_inventory_movement(uuid, uuid, int, text, timestamptz, text) TO authenticated;
 
@@ -167,4 +167,4 @@ BEGIN
   INSERT INTO inventory_movements (store_id, variation_id, delta, reason, order_id)
   VALUES (p_store_id, p_variation_id, -p_qty, 'sale', p_order_id);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;

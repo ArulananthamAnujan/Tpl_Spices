@@ -19,4 +19,4 @@ BEGIN
     AND variation_id = p_variation_id
     AND quantity >= p_qty;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;

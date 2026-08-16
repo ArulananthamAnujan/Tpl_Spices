@@ -781,7 +781,7 @@ BEGIN
     AND variation_id = p_variation_id
     AND quantity >= p_qty;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 
 -- >>>>>>>>>> 20260814090200_create_newsletter_subscribers.sql <<<<<<<<<<
@@ -1103,7 +1103,7 @@ BEGIN
   DO UPDATE SET quantity = store_inventory.quantity + NEW.delta;
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS trg_apply_inventory_movement ON inventory_movements;
 CREATE TRIGGER trg_apply_inventory_movement
@@ -1155,7 +1155,7 @@ BEGIN
 
   RETURN new_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 GRANT EXECUTE ON FUNCTION record_inventory_movement(uuid, uuid, int, text, timestamptz, text) TO authenticated;
 
@@ -1186,7 +1186,7 @@ BEGIN
   INSERT INTO inventory_movements (store_id, variation_id, delta, reason, order_id)
   VALUES (p_store_id, p_variation_id, -p_qty, 'sale', p_order_id);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 
 -- >>>>>>>>>> 20260814090500_wholesale_and_promotions.sql <<<<<<<<<<
@@ -1265,10 +1265,16 @@ WHERE u.id = p.id
   AND p.email IS DISTINCT FROM u.email;
 
 -- Capture the email for every future sign-up.
+--
+-- IMPORTANT: this trigger is fired by the Auth service (GoTrue), which runs
+-- with its own search_path — not public. It must therefore keep
+-- `SET search_path = public` and schema-qualify the table, exactly as the
+-- earlier search_path fix established. Without that, every sign-in and
+-- sign-up fails with "Database error querying schema".
 CREATE OR REPLACE FUNCTION handle_new_user()
 RETURNS trigger AS $$
 BEGIN
-  INSERT INTO profiles (id, role, full_name, email)
+  INSERT INTO public.profiles (id, role, full_name, email)
   VALUES (
     new.id,
     'customer',
@@ -1278,7 +1284,7 @@ BEGIN
   ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email;
   RETURN new;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
@@ -1449,7 +1455,7 @@ BEGIN
 
   RETURN new_id;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 GRANT EXECUTE ON FUNCTION record_inventory_movement(uuid, uuid, int, text, timestamptz, text) TO authenticated;
 
@@ -1498,6 +1504,49 @@ DROP POLICY IF EXISTS "products_staff_update" ON products;
 CREATE POLICY "products_staff_update" ON products FOR UPDATE TO authenticated
   USING (get_user_role() = 'staff')
   WITH CHECK (get_user_role() = 'staff');
+
+
+-- >>>>>>>>>> 20260814091000_fix_auth_null_tokens.sql <<<<<<<<<<
+
+/*
+# Fix "Database error querying schema" on sign-in
+
+The demo accounts were inserted straight into auth.users without GoTrue's
+token columns, so those columns are NULL. GoTrue reads them into plain Go
+strings, and a NULL there aborts the query with:
+
+    Database error querying schema
+
+which blocks sign-in for every user, not just the demo ones. The fix is to
+store empty strings instead of NULL — that is what GoTrue writes itself.
+
+Columns are patched only if they exist, since the set differs between Auth
+versions. Safe to re-run.
+*/
+
+DO $$
+DECLARE
+  col text;
+  token_cols text[] := ARRAY[
+    'confirmation_token',
+    'recovery_token',
+    'email_change',
+    'email_change_token_new',
+    'email_change_token_current',
+    'phone_change',
+    'phone_change_token',
+    'reauthentication_token'
+  ];
+BEGIN
+  FOREACH col IN ARRAY token_cols LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'auth' AND table_name = 'users' AND column_name = col
+    ) THEN
+      EXECUTE format('UPDATE auth.users SET %I = %L WHERE %I IS NULL', col, '', col);
+    END IF;
+  END LOOP;
+END $$;
 
 
 -- ============================================================
