@@ -64,22 +64,35 @@ export default function PromoCarousel() {
   };
 
   if (slides.length === 0) {
+    // Left-aligned and typographic rather than a centred gradient block —
+    // the centred-hero-on-a-gradient is the stock template opening.
     return (
-      <div className="bg-gradient-to-r from-tpl-dark via-tpl-forest to-tpl-mid py-16 px-4 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="font-display text-3xl sm:text-4xl text-white font-bold leading-tight">
-            Authentic Sri Lankan<br />
-            <span className="text-tpl-lime">&amp; Indian Groceries</span>
+      <div className="bg-tpl-dark relative overflow-hidden">
+        <div className="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-tpl-forest/40 to-transparent" />
+        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 sm:py-20">
+          <p className="text-[11px] uppercase tracking-[0.22em] text-tpl-lime mb-4">Est. Melbourne</p>
+          <h1 className="font-display text-4xl sm:text-5xl text-white leading-[1.05] tracking-tightest max-w-xl">
+            Sri Lankan &amp; Indian
+            <br />
+            groceries, done properly.
           </h1>
-          <p className="text-tpl-pale/80 mt-3 text-sm sm:text-base">
-            Fresh spices, pantry essentials &amp; more — delivered or ready for pickup.
+          <p className="text-tpl-pale/70 mt-5 text-sm sm:text-base max-w-md leading-relaxed">
+            Rice, spices and pantry staples sourced for the families who cook with them every day.
           </p>
-          <Link
-            to="/?section=grocery"
-            className="inline-flex items-center gap-2 mt-6 px-6 py-3 bg-tpl-lime text-tpl-dark font-semibold rounded-xl hover:bg-tpl-light transition-colors"
-          >
-            Shop Now <ArrowRight className="h-4 w-4" />
-          </Link>
+          <div className="flex flex-wrap items-center gap-3 mt-8">
+            <Link
+              to="/?section=grocery"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-tpl-lime text-tpl-dark font-semibold text-sm rounded-md hover:bg-tpl-light transition-colors"
+            >
+              Shop groceries <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              to="/deals"
+              className="inline-flex items-center px-6 py-3 border border-white/25 text-white font-medium text-sm rounded-md hover:bg-white/10 transition-colors"
+            >
+              This week's deals
+            </Link>
+          </div>
         </div>
       </div>
     );

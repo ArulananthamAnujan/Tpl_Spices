@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, ChevronDown, MapPin, Loader2, SlidersHorizontal, X, Salad, Shirt, Truck, ShieldCheck, Leaf, Store as StoreIcon, ArrowDownUp, Heart, Clock } from 'lucide-react';
+import { Search, ChevronDown, MapPin, Loader2, SlidersHorizontal, X, Salad, Shirt, ArrowDownUp, Heart, Clock } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Store, Category, Product } from '../lib/types';
 import ProductCard from '../components/ProductCard';
@@ -258,24 +258,16 @@ export default function StorefrontPage() {
     <div className="min-h-screen bg-tpl-cream">
       {!isBrowsing && <PromoCarousel />}
 
-      {/* Trust / feature strip — full on the landing page, hidden while shopping */}
+      {/* A quiet single line of reassurance. The four-up icon panel this
+          replaced is the stock template look and said little. */}
       {!isBrowsing && (
-      <div className="bg-tpl-forest text-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-2 md:grid-cols-4 divide-x divide-white/10">
-          {[
-            { icon: Leaf, title: 'Fresh & Authentic', sub: 'Quality spices & groceries' },
-            { icon: Truck, title: 'Delivery & Pickup', sub: 'Fast, flexible fulfilment' },
-            { icon: ShieldCheck, title: 'Secure Checkout', sub: 'Safe, encrypted payments' },
-            { icon: StoreIcon, title: 'Local Stores', sub: 'Serving your community' },
-          ].map(f => (
-            <div key={f.title} className="flex items-center gap-3 px-3 py-3.5">
-              <f.icon className="h-5 w-5 text-tpl-lime flex-shrink-0" />
-              <div className="min-w-0">
-                <p className="text-xs sm:text-sm font-semibold leading-tight truncate">{f.title}</p>
-                <p className="text-[11px] text-tpl-pale/70 leading-tight truncate hidden sm:block">{f.sub}</p>
-              </div>
-            </div>
-          ))}
+      <div className="bg-white border-y border-tpl-dark/8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-center gap-x-8 gap-y-1.5 text-[11px] uppercase tracking-[0.14em] text-gray-500">
+          <span>Sri Lankan &amp; Indian groceries</span>
+          <span className="hidden sm:inline text-tpl-dark/15">/</span>
+          <span>Delivery &amp; pickup</span>
+          <span className="hidden sm:inline text-tpl-dark/15">/</span>
+          <span>Secure checkout</span>
         </div>
       </div>
       )}
@@ -381,7 +373,7 @@ export default function StorefrontPage() {
         <div className="flex gap-8">
           {/* Sidebar */}
           <aside className={`w-52 flex-shrink-0 ${showMobileFilters ? 'block' : 'hidden'} md:block`}>
-            <div className="bg-white rounded-2xl shadow-card p-4 sticky top-28">
+            <div className="bg-white rounded-card border border-tpl-dark/8 p-4 sticky top-28">
               <div className="flex items-center gap-2 mb-3">
                 {section === 'grocery'
                   ? <Salad className="h-4 w-4 text-tpl-forest" />
@@ -390,7 +382,7 @@ export default function StorefrontPage() {
               </div>
               <button
                 onClick={() => selectCategory(null)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-colors ${!selectedCategory ? 'bg-tpl-forest text-white font-medium' : 'text-gray-600 hover:bg-tpl-cream'}`}
+                className={`w-full text-left px-3 py-1.5 rounded-md text-[13px] mb-0.5 transition-colors ${!selectedCategory ? 'bg-tpl-warm text-tpl-dark font-semibold' : 'text-gray-600 hover:bg-tpl-warm/60'}`}
               >
                 All Products
               </button>
@@ -401,7 +393,7 @@ export default function StorefrontPage() {
                   <div key={cat.id}>
                     <button
                       onClick={() => selectCategory(cat.id)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-colors ${selectedCategory === cat.id ? 'bg-tpl-forest text-white font-medium' : 'text-gray-600 hover:bg-tpl-cream'}`}
+                      className={`w-full text-left px-3 py-1.5 rounded-md text-[13px] mb-0.5 transition-colors ${selectedCategory === cat.id ? 'bg-tpl-warm text-tpl-dark font-semibold' : 'text-gray-600 hover:bg-tpl-warm/60'}`}
                     >
                       {cat.name}
                     </button>
@@ -412,7 +404,7 @@ export default function StorefrontPage() {
                           <button
                             key={child.id}
                             onClick={() => selectCategory(child.id)}
-                            className={`w-full text-left px-3 py-1.5 rounded-lg text-[13px] mb-0.5 transition-colors ${selectedCategory === child.id ? 'bg-tpl-pale text-tpl-forest font-medium' : 'text-gray-500 hover:bg-tpl-cream'}`}
+                            className={`w-full text-left px-3 py-1.5 rounded-md text-[12px] mb-0.5 transition-colors ${selectedCategory === child.id ? 'text-tpl-forest font-semibold' : 'text-gray-500 hover:text-tpl-dark'}`}
                           >
                             {child.name}
                           </button>
@@ -457,7 +449,7 @@ export default function StorefrontPage() {
                     <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide px-3 mb-2">Brand</p>
                     <button
                       onClick={() => setSelectedBrand(null)}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-colors ${!selectedBrand ? 'bg-tpl-forest text-white font-medium' : 'text-gray-600 hover:bg-tpl-cream'}`}
+                      className={`w-full text-left px-3 py-1.5 rounded-md text-[13px] mb-0.5 transition-colors ${!selectedBrand ? 'bg-tpl-warm text-tpl-dark font-semibold' : 'text-gray-600 hover:bg-tpl-warm/60'}`}
                     >
                       All Brands
                     </button>
@@ -465,7 +457,7 @@ export default function StorefrontPage() {
                       <button
                         key={brand}
                         onClick={() => setSelectedBrand(selectedBrand === brand ? null : brand)}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-colors ${selectedBrand === brand ? 'bg-tpl-forest text-white font-medium' : 'text-gray-600 hover:bg-tpl-cream'}`}
+                        className={`w-full text-left px-3 py-1.5 rounded-md text-[13px] mb-0.5 transition-colors ${selectedBrand === brand ? 'bg-tpl-warm text-tpl-dark font-semibold' : 'text-gray-600 hover:bg-tpl-warm/60'}`}
                       >
                         {brand}
                       </button>
@@ -482,7 +474,7 @@ export default function StorefrontPage() {
             {!loadingProducts && products.length > 0 && (
               <div className="mb-4 pb-3 border-b border-gray-200 flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <h2 className="font-display text-xl font-bold text-tpl-dark">
+                  <h2 className="font-display text-2xl text-tpl-dark tracking-tightest">
                     {selectedCategory && categories.find(c => c.id === selectedCategory)
                       ? categories.find(c => c.id === selectedCategory)?.name
                       : sectionLabel}
@@ -538,8 +530,8 @@ export default function StorefrontPage() {
               // Skeleton cards keep the layout stable while results load.
               <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {Array.from({ length: 8 }).map((_, i) => (
-                  <div key={i} className="bg-white rounded-2xl shadow-card overflow-hidden animate-pulse">
-                    <div className="aspect-square bg-gray-100" />
+                  <div key={i} className="bg-white rounded-card border border-tpl-dark/8 overflow-hidden animate-pulse">
+                    <div className="aspect-square bg-tpl-warm" />
                     <div className="p-4 space-y-2">
                       <div className="h-3 bg-gray-100 rounded w-1/3" />
                       <div className="h-4 bg-gray-100 rounded w-4/5" />
@@ -550,7 +542,7 @@ export default function StorefrontPage() {
                 ))}
               </div>
             ) : sorted.length === 0 ? (
-              <div className="bg-white rounded-2xl shadow-card p-12 text-center">
+              <div className="bg-white rounded-card border border-tpl-dark/8 p-12 text-center">
                 {section === 'grocery'
                   ? <Salad className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                   : <Shirt className="h-12 w-12 text-gray-300 mx-auto mb-4" />}
@@ -601,7 +593,7 @@ export default function StorefrontPage() {
                 {/* Saved for later */}
                 {savedProducts.length > 0 && (
                   <section className="mt-12">
-                    <h3 className="font-display text-lg font-bold text-tpl-dark mb-3 flex items-center gap-2">
+                    <h3 className="font-display text-xl text-tpl-dark tracking-tightest mb-3 flex items-center gap-2">
                       <Heart className="h-4 w-4 text-red-500 fill-current" /> Saved for later
                     </h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
@@ -615,7 +607,7 @@ export default function StorefrontPage() {
                 {/* Recently viewed */}
                 {recentProducts.length > 0 && (
                   <section className="mt-12">
-                    <h3 className="font-display text-lg font-bold text-tpl-dark mb-3 flex items-center gap-2">
+                    <h3 className="font-display text-xl text-tpl-dark tracking-tightest mb-3 flex items-center gap-2">
                       <Clock className="h-4 w-4 text-tpl-forest" /> Recently viewed
                     </h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">

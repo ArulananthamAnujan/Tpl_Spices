@@ -15,15 +15,6 @@ interface Props {
   onClick?: () => void;
 }
 
-// Consistent colour per product based on name initial
-const PLACEHOLDER_COLORS = [
-  'from-emerald-100 to-tpl-pale',
-  'from-amber-100 to-yellow-50',
-  'from-sky-100 to-blue-50',
-  'from-rose-100 to-pink-50',
-  'from-violet-100 to-purple-50',
-  'from-tpl-pale to-tpl-cream',
-];
 
 export default function ProductCard({ product, store, stock, rating, onClick }: Props) {
   const { addItem } = useCart();
@@ -79,17 +70,16 @@ export default function ProductCard({ product, store, stock, rating, onClick }: 
     setQty(q => Math.min(maxQty, Math.max(1, q + by)));
   };
 
-  const colorClass = PLACEHOLDER_COLORS[product.name.charCodeAt(0) % PLACEHOLDER_COLORS.length];
   const initials = product.name.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
   const saved = wishlist.has(product.id);
 
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-2xl shadow-card hover:shadow-card-hover transition-all duration-300 overflow-hidden cursor-pointer group flex flex-col"
+      className="bg-white rounded-card border border-tpl-dark/8 hover:border-tpl-dark/16 shadow-card hover:shadow-card-hover hover:-translate-y-0.5 transition-all duration-200 overflow-hidden cursor-pointer group flex flex-col"
     >
       {/* Image */}
-      <div className="relative aspect-square overflow-hidden bg-tpl-cream">
+      <div className="relative aspect-square overflow-hidden bg-tpl-warm border-b border-tpl-dark/6">
         {product.image_url ? (
           <img
             src={product.image_url}
@@ -98,54 +88,49 @@ export default function ProductCard({ product, store, stock, rating, onClick }: 
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
           />
         ) : (
-          <div className={`w-full h-full flex flex-col items-center justify-center bg-gradient-to-br ${colorClass} gap-2`}>
-            <div className="w-14 h-14 rounded-2xl bg-white/60 backdrop-blur-sm flex items-center justify-center shadow-sm">
-              <span className="text-xl font-bold text-tpl-forest/70 tracking-tight">{initials}</span>
-            </div>
+          <div className="w-full h-full flex flex-col items-center justify-center gap-1.5">
+            <span className="font-display text-3xl text-tpl-forest/25 tracking-tightest select-none">{initials}</span>
             {product.category && (
-              <span className="text-xs text-tpl-forest/50 font-medium">{product.category.name}</span>
+              <span className="text-[10px] uppercase tracking-[0.14em] text-tpl-forest/30 font-medium">
+                {product.category.name}
+              </span>
             )}
           </div>
         )}
 
         {/* Discount / category badges */}
-        <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
-          {promoOn && (
-            <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full font-bold shadow-sm">
-              {savingPct > 0 ? `-${savingPct}%` : promoLabel(defaultVariation!)}
-            </span>
-          )}
-          {product.image_url && product.category && (
-            <span className="bg-tpl-forest/90 text-white text-[11px] px-2 py-0.5 rounded-full font-medium">
-              {product.category.name}
-            </span>
-          )}
-        </div>
+        {promoOn && (
+          <span className="absolute top-0 left-0 bg-red-600 text-white text-[11px] px-2 py-1 font-semibold tracking-wide rounded-br-card">
+            {savingPct > 0 ? `${savingPct}% off` : promoLabel(defaultVariation!)}
+          </span>
+        )}
 
         {/* Wishlist */}
         <button
           onClick={e => { e.stopPropagation(); wishlist.toggle(product.id); }}
           title={saved ? 'Remove from saved' : 'Save for later'}
-          className={`absolute top-2 right-2 h-8 w-8 rounded-full flex items-center justify-center backdrop-blur-sm transition-all ${
-            saved ? 'bg-red-500 text-white' : 'bg-white/80 text-gray-500 hover:text-red-500'
+          className={`absolute top-2 right-2 h-7 w-7 rounded-full flex items-center justify-center transition-all ${
+            saved
+              ? 'bg-white text-red-600 opacity-100 shadow-card'
+              : 'bg-white/90 text-gray-400 opacity-0 group-hover:opacity-100 hover:text-red-600'
           }`}
         >
           <Heart className={`h-4 w-4 ${saved ? 'fill-current' : ''}`} />
         </button>
 
         {outOfStock && (
-          <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
-            <span className="bg-tpl-dark text-white text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">Out of Stock</span>
+          <div className="absolute inset-0 bg-tpl-warm/80 flex items-center justify-center">
+            <span className="text-tpl-dark/70 text-[11px] font-semibold uppercase tracking-[0.16em]">Out of stock</span>
           </div>
         )}
       </div>
 
       {/* Info */}
-      <div className="p-4 flex flex-col flex-1">
+      <div className="p-3.5 flex flex-col flex-1">
         {product.brand && (
-          <p className="text-xs font-semibold text-tpl-forest/70 uppercase tracking-wide mb-0.5">{product.brand}</p>
+          <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-[0.14em] mb-1">{product.brand}</p>
         )}
-        <h3 className="font-semibold text-tpl-dark text-sm leading-snug mb-1 line-clamp-2 group-hover:text-tpl-forest transition-colors">
+        <h3 className="font-medium text-tpl-dark text-[13px] leading-snug mb-1.5 line-clamp-2 decoration-tpl-dark/20 underline-offset-2 group-hover:underline">
           {product.name}
         </h3>
         {rating && rating.count > 0 && (
@@ -155,39 +140,39 @@ export default function ProductCard({ product, store, stock, rating, onClick }: 
           </span>
         )}
         {variations.length > 1 && (
-          <p className="text-xs text-gray-400 mb-1">{variations.length} options available</p>
+          <p className="text-[11px] text-gray-400 mb-1">{variations.length} sizes</p>
         )}
 
         {/* Price */}
         <div className="mt-auto pt-2">
           {price !== undefined ? (
             promoOn && salePrice !== undefined ? (
-              <span className="flex items-baseline gap-1.5 flex-wrap">
-                <span className="text-red-600 font-bold text-lg">{formatPrice(salePrice)}</span>
+              <span className="flex items-baseline gap-2 flex-wrap">
+                <span className="font-display text-red-700 text-[22px] leading-none tracking-tightest">{formatPrice(salePrice)}</span>
                 <span className="text-gray-400 text-xs line-through">{formatPrice(price)}</span>
               </span>
             ) : (
-              <span className="text-tpl-forest font-bold text-lg">{formatPrice(price)}</span>
+              <span className="font-display text-tpl-dark text-[22px] leading-none tracking-tightest">{formatPrice(price)}</span>
             )
           ) : (
             <span className="text-gray-400 text-sm">Price on request</span>
           )}
           {defaultVariation && (
-            <p className="text-xs text-gray-400">{defaultVariation.name}</p>
+            <p className="text-[11px] text-gray-400 mt-1">{defaultVariation.name}</p>
           )}
           {hasWholesale && defaultVariation && (
-            <p className="text-xs text-tpl-forest/80 font-medium mt-0.5">
-              {formatPrice(defaultVariation.wholesale_price_cents as number)} ea. when you buy {defaultVariation.wholesale_min_qty}+
+            <p className="text-[11px] text-tpl-mid font-medium mt-1">
+              {formatPrice(defaultVariation.wholesale_price_cents as number)} each from {defaultVariation.wholesale_min_qty}
             </p>
           )}
           {lowStock && (
-            <p className="text-xs text-tpl-amber font-medium mt-0.5">Only {trackedQty} left</p>
+            <p className="text-[11px] text-tpl-amber font-medium mt-1">Only {trackedQty} left</p>
           )}
 
           {/* Quantity + add to cart */}
           {store && defaultVariation && !outOfStock && (
             <div className="flex items-center gap-2 mt-3" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden flex-shrink-0">
+              <div className="flex items-center border border-tpl-dark/12 rounded-md overflow-hidden flex-shrink-0">
                 <button onClick={e => step(e, -1)} disabled={qty <= 1}
                   className="px-2 py-1.5 text-gray-500 hover:bg-gray-50 disabled:opacity-30 transition-colors">
                   <Minus className="h-3 w-3" />
@@ -200,8 +185,8 @@ export default function ProductCard({ product, store, stock, rating, onClick }: 
               </div>
               <button
                 onClick={handleAdd}
-                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-all duration-300 ${
-                  adding ? 'bg-tpl-lime text-tpl-dark' : 'bg-tpl-forest text-white hover:bg-tpl-mid'
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-[12px] font-semibold tracking-wide transition-colors duration-200 ${
+                  adding ? 'bg-tpl-pale text-tpl-forest' : 'bg-tpl-dark text-white hover:bg-tpl-forest'
                 }`}
               >
                 {adding ? <><Check className="h-3.5 w-3.5" /> Added</> : <><ShoppingCart className="h-3.5 w-3.5" /> Add</>}

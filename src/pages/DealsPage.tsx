@@ -81,7 +81,7 @@ export default function DealsPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
         {onSale.length === 0 && bulkDeals.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-card p-12 text-center">
+          <div className="bg-white rounded-card border border-tpl-dark/8 p-12 text-center">
             <PackageOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-700 mb-2">No deals running right now</h3>
             <p className="text-sm text-gray-500 mb-6">Check back soon — new offers are added regularly.</p>

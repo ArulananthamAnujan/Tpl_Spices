@@ -20,9 +20,19 @@ export default {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         display: ['Playfair Display', 'Georgia', 'serif'],
       },
+      // Hairline borders carry the structure; shadows stay almost invisible
+      // until something is lifted. Heavy drop shadows on every surface are what
+      // make a page read as a template.
       boxShadow: {
-        'card': '0 2px 8px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)',
-        'card-hover': '0 8px 24px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.06)',
+        'card': '0 1px 2px rgba(21,43,14,0.04)',
+        'card-hover': '0 6px 20px -6px rgba(21,43,14,0.14)',
+        'lift': '0 12px 32px -8px rgba(21,43,14,0.18)',
+      },
+      borderRadius: {
+        'card': '0.625rem',
+      },
+      letterSpacing: {
+        'tightest': '-0.03em',
       },
     },
   },

@@ -49,7 +49,7 @@ export default function CartPage() {
             )}
 
             {items.map(item => (
-              <div key={item.variation_id} className="bg-white rounded-2xl shadow-card p-4 flex items-center gap-4">
+              <div key={item.variation_id} className="bg-white rounded-card border border-tpl-dark/8 p-4 flex items-center gap-4">
                 {/* Thumbnail */}
                 <div className="w-16 h-16 rounded-xl overflow-hidden bg-tpl-cream flex-shrink-0">
                   {item.image_url ? (
@@ -113,7 +113,7 @@ export default function CartPage() {
 
           {/* Summary */}
           <div>
-            <div className="bg-white rounded-2xl shadow-card p-6 sticky top-24">
+            <div className="bg-white rounded-card border border-tpl-dark/8 p-6 sticky top-24">
               <h2 className="font-semibold text-tpl-dark text-lg mb-4">Order Summary</h2>
               <div className="space-y-2 mb-4 text-sm">
                 {items.map(item => (

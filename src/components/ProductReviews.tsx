@@ -90,7 +90,7 @@ export default function ProductReviews({ productId }: { productId: string }) {
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-card p-6 mt-6">
+    <div className="bg-white rounded-card border border-tpl-dark/8 p-6 mt-6">
       <h2 className="font-display text-lg font-bold text-tpl-dark mb-4 flex items-center gap-2">
         <MessageSquare className="h-5 w-5 text-tpl-forest" /> Ratings &amp; reviews
       </h2>

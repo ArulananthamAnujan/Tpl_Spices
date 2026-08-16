@@ -162,7 +162,7 @@ export default function AccountPage() {
     <div className="min-h-screen bg-tpl-cream">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="bg-gradient-to-r from-tpl-forest to-tpl-mid rounded-2xl p-6 mb-8 text-white">
+        <div className="bg-gradient-to-r from-tpl-forest to-tpl-mid rounded-card p-6 mb-8 text-white">
           <h1 className="font-display text-2xl font-bold mb-1">My Account</h1>
           <p className="text-tpl-pale/80 text-sm">{profile?.full_name || 'Welcome back!'}</p>
         </div>
@@ -170,7 +170,7 @@ export default function AccountPage() {
         <h2 className="font-semibold text-tpl-dark text-lg mb-4">Order History</h2>
 
         {orders.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-card p-12 text-center">
+          <div className="bg-white rounded-card border border-tpl-dark/8 p-12 text-center">
             <ShoppingBag className="h-12 w-12 text-gray-300 mx-auto mb-4" />
             <h3 className="font-semibold text-gray-600 mb-2">No orders yet</h3>
             <p className="text-sm text-gray-400 mb-6">Your order history will appear here once you place your first order.</p>
@@ -181,7 +181,7 @@ export default function AccountPage() {
         ) : (
           <div className="space-y-3">
             {orders.map(order => (
-              <div key={order.id} className="bg-white rounded-2xl shadow-card overflow-hidden">
+              <div key={order.id} className="bg-white rounded-card border border-tpl-dark/8 overflow-hidden">
                 <button
                   className="w-full text-left p-5 flex items-center justify-between hover:bg-gray-50 transition-colors"
                   onClick={() => setExpandedOrder(expandedOrder === order.id ? null : order.id)}

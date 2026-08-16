@@ -103,7 +103,7 @@ export default function ProductDetailPage() {
           <ArrowLeft className="h-4 w-4" /> Back to Shop
         </button>
 
-        <div className="bg-white rounded-2xl shadow-card overflow-hidden">
+        <div className="bg-white rounded-card border border-tpl-dark/8 overflow-hidden">
           <div className="grid grid-cols-1 md:grid-cols-2">
             {/* Image */}
             <div className="aspect-square bg-tpl-cream flex items-center justify-center">

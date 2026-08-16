@@ -141,7 +141,7 @@ export default function CheckoutPage() {
   if (orderId) {
     return (
       <div className="min-h-screen bg-tpl-cream flex items-center justify-center px-4">
-        <div className="bg-white rounded-2xl shadow-card p-10 max-w-md w-full text-center">
+        <div className="bg-white rounded-card border border-tpl-dark/8 p-10 max-w-md w-full text-center">
           <div className="bg-tpl-pale w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="h-10 w-10 text-tpl-mid" />
           </div>
@@ -175,7 +175,7 @@ export default function CheckoutPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-5">
               {/* Fulfillment */}
-              <div className="bg-white rounded-2xl shadow-card p-6">
+              <div className="bg-white rounded-card border border-tpl-dark/8 p-6">
                 <h2 className="font-semibold text-tpl-dark mb-4">Fulfillment Method</h2>
                 <div className="grid grid-cols-2 gap-3">
                   {store.pickup_enabled && (
@@ -205,7 +205,7 @@ export default function CheckoutPage() {
 
               {/* Delivery Address */}
               {fulfillmentType === 'DELIVERY' && (
-                <div className="bg-white rounded-2xl shadow-card p-6">
+                <div className="bg-white rounded-card border border-tpl-dark/8 p-6">
                   <h2 className="font-semibold text-tpl-dark mb-4 flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-tpl-forest" /> Delivery Address
                   </h2>
@@ -223,7 +223,7 @@ export default function CheckoutPage() {
               )}
 
               {/* Scheduled Time */}
-              <div className="bg-white rounded-2xl shadow-card p-6">
+              <div className="bg-white rounded-card border border-tpl-dark/8 p-6">
                 <h2 className="font-semibold text-tpl-dark mb-4 flex items-center gap-2">
                   <Clock className="h-4 w-4 text-tpl-forest" />
                   {fulfillmentType === 'PICKUP' ? 'Pickup Time' : 'Delivery Time'} <span className="text-gray-400 text-xs font-normal">(optional)</span>
@@ -245,7 +245,7 @@ export default function CheckoutPage() {
               </div>
 
               {/* Payment */}
-              <div className="bg-white rounded-2xl shadow-card p-6">
+              <div className="bg-white rounded-card border border-tpl-dark/8 p-6">
                 <h2 className="font-semibold text-tpl-dark mb-4 flex items-center gap-2">
                   <CreditCard className="h-4 w-4 text-tpl-forest" /> Payment
                 </h2>
@@ -273,7 +273,7 @@ export default function CheckoutPage() {
 
             {/* Order Summary */}
             <div>
-              <div className="bg-white rounded-2xl shadow-card p-6 sticky top-24">
+              <div className="bg-white rounded-card border border-tpl-dark/8 p-6 sticky top-24">
                 <h2 className="font-semibold text-tpl-dark mb-4">Order Summary</h2>
                 <div className="space-y-2 mb-4">
                   {items.map(item => (
