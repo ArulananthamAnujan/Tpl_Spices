@@ -257,12 +257,95 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // ------------------------------------------------------------------
+    // INVENTORY: pull Square's stock counts for each linked store.
+    //
+    // Changes are written as inventory_movements rows rather than by setting
+    // store_inventory directly, so the ledger (and the history/aging reports
+    // built on it) stays truthful — a sync shows up as an adjustment with a
+    // note, exactly like a manual correction.
+    // ------------------------------------------------------------------
+    let inventoryUpdated = 0;
+    const inventoryNotes: string[] = [];
+
+    const { data: linkedStores } = await supabaseAdmin
+      .from("stores")
+      .select("id, name, square_location_id")
+      .not("square_location_id", "is", null);
+
+    const storeByLocation = new Map<string, { id: string; name: string }>();
+    for (const s of linkedStores ?? []) {
+      if (s.square_location_id) storeByLocation.set(s.square_location_id, { id: s.id, name: s.name });
+    }
+
+    if (storeByLocation.size === 0) {
+      inventoryNotes.push("No store has a Square Location ID set, so stock counts were skipped.");
+    } else {
+      const { data: dbVars } = await supabaseAdmin
+        .from("product_variations")
+        .select("id, square_variation_id");
+      const varBySquareId = new Map((dbVars ?? []).map((v: any) => [v.square_variation_id, v.id]));
+
+      const squareVariationIds = (squareVariations ?? []).map(v => v.id).filter(Boolean);
+      const locationIds = [...storeByLocation.keys()];
+
+      // Current levels, so we can write the difference rather than the total.
+      const { data: currentInv } = await supabaseAdmin
+        .from("store_inventory")
+        .select("store_id, variation_id, quantity");
+      const currentByKey = new Map(
+        (currentInv ?? []).map((r: any) => [`${r.store_id}:${r.variation_id}`, r.quantity]),
+      );
+
+      // Square caps this endpoint at 1000 catalog object ids per request.
+      for (let i = 0; i < squareVariationIds.length; i += 500) {
+        const batch = squareVariationIds.slice(i, i + 500);
+        const invRes = await fetch(`${squareBase}/v2/inventory/counts/batch-retrieve`, {
+          method: "POST",
+          headers: squareHeaders,
+          body: JSON.stringify({ catalog_object_ids: batch, location_ids: locationIds }),
+        });
+
+        if (!invRes.ok) {
+          const errBody = await invRes.text();
+          inventoryNotes.push(`Square inventory lookup failed (${invRes.status}).`);
+          console.error("inventory batch-retrieve failed:", errBody);
+          break;
+        }
+
+        const invData = await invRes.json();
+        for (const count of invData.counts ?? []) {
+          if (count.state !== "IN_STOCK") continue;
+          const store = storeByLocation.get(count.location_id);
+          const variationId = varBySquareId.get(count.catalog_object_id);
+          if (!store || !variationId) continue;
+
+          const squareQty = Math.max(0, Math.floor(Number(count.quantity ?? 0)));
+          const current = currentByKey.get(`${store.id}:${variationId}`) ?? 0;
+          const delta = squareQty - current;
+          if (delta === 0) continue;
+
+          const { error: moveErr } = await supabaseAdmin.from("inventory_movements").insert({
+            store_id: store.id,
+            variation_id: variationId,
+            delta,
+            reason: "adjustment",
+            note: `Square inventory sync (set to ${squareQty})`,
+          });
+          if (moveErr) console.error("inventory sync movement error:", moveErr.message);
+          else inventoryUpdated++;
+        }
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         categories: catCount,
         products: prodCount,
         variations: varCount,
+        inventoryUpdated,
+        inventoryNotes,
         squareTotal: allObjects.length,
         byType: typeCounts,
       }),

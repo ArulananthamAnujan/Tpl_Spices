@@ -31,6 +31,10 @@ export default function PricingPromotionsPanel() {
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState('');
   const [needsPriceOnly, setNeedsPriceOnly] = useState(false);
+  // Only needed if SQUARE_ACCESS_TOKEN isn't set as a Supabase secret.
+  const [needToken, setNeedToken] = useState(false);
+  const [tokenInput, setTokenInput] = useState('');
+  const [envInput, setEnvInput] = useState<'production' | 'sandbox'>('production');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [savingId, setSavingId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { retail: string; ws: string; wsMin: string }>>({});
@@ -160,11 +164,24 @@ export default function PricingPromotionsPanel() {
           Authorization: `Bearer ${session?.access_token ?? ''}`,
           apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string,
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify(
+          tokenInput.trim() ? { square_token: tokenInput.trim(), square_env: envInput } : {},
+        ),
       });
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error ?? `Sync failed (${res.status})`);
-      setSyncMsg(`Synced ${body.products ?? 0} products and ${body.variations ?? 0} prices from Square.`);
+      if (!res.ok) {
+        // No stored secret — let them paste a token just this once.
+        if (/access token/i.test(body.error ?? '')) setNeedToken(true);
+        throw new Error(body.error ?? `Sync failed (${res.status})`);
+      }
+      setNeedToken(false);
+      const inv = body.inventoryUpdated ?? 0;
+      const notes = (body.inventoryNotes ?? []).join(' ');
+      setSyncMsg(
+        `Synced ${body.products ?? 0} products and ${body.variations ?? 0} prices from Square.` +
+        (inv > 0 ? ` Updated stock on ${inv} item${inv > 1 ? 's' : ''}.` : '') +
+        (notes ? ` ${notes}` : ''),
+      );
       await load();
     } catch (e) {
       setSyncMsg(`Error: ${(e as Error).message}`);
@@ -289,6 +306,24 @@ export default function PricingPromotionsPanel() {
             </button>
           )}
         </div>
+        {needToken && (
+          <div className="mb-3 p-3 rounded-xl border border-amber-200 bg-amber-50">
+            <p className="text-xs text-amber-800 mb-2">
+              No Square token is stored. Paste one here to sync now — or set <code>SQUARE_ACCESS_TOKEN</code> in
+              Supabase → Edge Functions → Secrets so you never have to paste it again.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input value={tokenInput} onChange={e => setTokenInput(e.target.value)} type="password"
+                placeholder="EAAA… Square access token"
+                className="flex-1 min-w-[220px] px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
+              <select value={envInput} onChange={e => setEnvInput(e.target.value as 'production' | 'sandbox')}
+                className="px-3 py-2 border border-gray-200 rounded-xl text-sm bg-white">
+                <option value="production">Production</option>
+                <option value="sandbox">Sandbox</option>
+              </select>
+            </div>
+          </div>
+        )}
         {syncMsg && (
           <div className={`text-sm px-3 py-2 rounded-xl mb-3 ${syncMsg.startsWith('Error') ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-tpl-pale text-tpl-forest'}`}>
             {syncMsg}

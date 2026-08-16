@@ -75,7 +75,7 @@ export default function PromoCarousel() {
             Fresh spices, pantry essentials &amp; more — delivered or ready for pickup.
           </p>
           <Link
-            to="/"
+            to="/?section=grocery"
             className="inline-flex items-center gap-2 mt-6 px-6 py-3 bg-tpl-lime text-tpl-dark font-semibold rounded-xl hover:bg-tpl-light transition-colors"
           >
             Shop Now <ArrowRight className="h-4 w-4" />

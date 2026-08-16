@@ -14,7 +14,7 @@ import StaffPanel from '../components/StaffPanel';
 import CategoriesPanel from '../components/CategoriesPanel';
 import OverviewPanel from '../components/OverviewPanel';
 
-type Tab = 'overview' | 'orders' | 'stores' | 'staff' | 'catalog' | 'categories' | 'products' | 'inventory' | 'pricing' | 'promos';
+type Tab = 'overview' | 'orders' | 'stores' | 'staff' | 'categories' | 'products' | 'inventory' | 'pricing' | 'promos';
 
 const EMPTY_SLIDE: Partial<PromoSlide> = {
   title: '',
@@ -71,12 +71,6 @@ export default function AdminDashboardPage() {
   const [enhanceTesting, setEnhanceTesting] = useState(false);
   const [enhanceTestResult, setEnhanceTestResult] = useState<{ ok: boolean; imageUrl?: string; error?: string; product?: string } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [syncLoading, setSyncLoading] = useState(false);
-  const [syncMessage, setSyncMessage] = useState('');
-  const [squareToken, setSquareToken] = useState('');
-  const [squareEnv, setSquareEnv] = useState<'sandbox' | 'production'>('production');
-  const [testResult, setTestResult] = useState<any>(null);
-  const [testLoading, setTestLoading] = useState(false);
 
   // Store form
   const [storeForm, setStoreForm] = useState<Partial<Store> | null>(null);
@@ -110,48 +104,7 @@ export default function AdminDashboardPage() {
     setLoading(false);
   };
 
-  const syncCatalog = async () => {
-    if (!squareToken.trim()) { setSyncMessage('Error: Please enter your Square Access Token.'); return; }
-    setSyncLoading(true); setSyncMessage(''); setTestResult(null);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-catalog`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ square_token: squareToken.trim(), square_env: squareEnv }),
-      });
-      const body = await res.json();
-      if (!res.ok || body.error) { setSyncMessage('Error: ' + (body.error || 'sync failed')); }
-      else { setSyncMessage(`Synced successfully: ${body.categories ?? 0} categories, ${body.products ?? 0} products, ${body.variations ?? 0} variations. (${body.squareTotal ?? 0} total objects from Square)`); }
-    } catch (e: any) {
-      setSyncMessage('Error: ' + e.message);
-    }
-    setSyncLoading(false);
-  };
 
-  const testConnection = async () => {
-    if (!squareToken.trim()) { setTestResult({ error: 'Please enter a token first.' }); return; }
-    setTestLoading(true); setTestResult(null); setSyncMessage('');
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-catalog`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ square_token: squareToken.trim(), square_env: squareEnv, debug: true }),
-      });
-      const body = await res.json();
-      setTestResult(body);
-    } catch (e: any) {
-      setTestResult({ error: e.message });
-    }
-    setTestLoading(false);
-  };
 
   const deleteStore = async (id: string) => {
     if (!window.confirm('Delete this store?')) return;
@@ -591,7 +544,6 @@ export default function AdminDashboardPage() {
     { id: 'orders', label: 'All Orders', icon: <Package className="h-4 w-4" /> },
     { id: 'stores', label: 'Stores', icon: <StoreIcon className="h-4 w-4" /> },
     { id: 'staff', label: 'Staff', icon: <Users className="h-4 w-4" /> },
-    { id: 'catalog', label: 'Catalogue', icon: <RefreshCw className="h-4 w-4" /> },
     { id: 'categories', label: 'Categories', icon: <Tag className="h-4 w-4" /> },
     { id: 'products', label: 'Product Photos', icon: <Camera className="h-4 w-4" /> },
     { id: 'inventory', label: 'Inventory', icon: <Boxes className="h-4 w-4" /> },
@@ -735,123 +687,6 @@ export default function AdminDashboardPage() {
             {/* STAFF TAB */}
             {tab === 'staff' && <StaffPanel />}
 
-            {/* CATALOG TAB */}
-            {tab === 'catalog' && (
-              <div className="bg-white rounded-2xl shadow-card p-8">
-                <h2 className="font-semibold text-tpl-dark text-lg mb-2">Square Catalogue Sync</h2>
-                <p className="text-sm text-gray-500 mb-6">
-                  Pull all products, categories, and prices from your Square catalogue into Supabase.
-                  Use <strong>Test Connection</strong> first to confirm your token is working, then <strong>Sync</strong>.
-                </p>
-
-                <div className="space-y-4 mb-6">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">Environment</label>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => { setSquareEnv('production'); setTestResult(null); setSyncMessage(''); }}
-                        className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${squareEnv === 'production' ? 'bg-tpl-forest text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                      >
-                        Production
-                      </button>
-                      <button
-                        onClick={() => { setSquareEnv('sandbox'); setTestResult(null); setSyncMessage(''); }}
-                        className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${squareEnv === 'sandbox' ? 'bg-tpl-forest text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-                      >
-                        Sandbox
-                      </button>
-                    </div>
-                    {squareEnv === 'sandbox' && (
-                      <p className="text-xs text-amber-600 mt-1.5 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                        Sandbox has a separate empty catalog. Your real 186 items are in Production — switch to Production and use your production access token.
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                      Square {squareEnv === 'production' ? 'Production' : 'Sandbox'} Access Token
-                    </label>
-                    <input
-                      type="password"
-                      value={squareToken}
-                      onChange={e => { setSquareToken(e.target.value); setTestResult(null); setSyncMessage(''); }}
-                      placeholder={squareEnv === 'production' ? 'EAAA... (production token)' : 'EAAAl... (sandbox token)'}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-tpl-lime"
-                    />
-                    <p className="text-xs text-gray-400 mt-1">
-                      Square Developer Dashboard → your app → {squareEnv === 'production' ? 'Production' : 'Sandbox'} → Access Token
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-3">
-                  <button
-                    onClick={testConnection}
-                    disabled={testLoading || syncLoading}
-                    className="flex items-center gap-2 px-5 py-2.5 border-2 border-tpl-forest text-tpl-forest font-semibold rounded-xl hover:bg-tpl-pale transition-colors disabled:opacity-50 text-sm"
-                  >
-                    <CheckCircle className={`h-4 w-4 ${testLoading ? 'animate-pulse' : ''}`} />
-                    {testLoading ? 'Testing…' : 'Test Connection'}
-                  </button>
-                  <button
-                    onClick={syncCatalog}
-                    disabled={syncLoading || testLoading}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-tpl-forest text-white font-semibold rounded-xl hover:bg-tpl-mid transition-colors disabled:opacity-50 text-sm"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${syncLoading ? 'animate-spin' : ''}`} />
-                    {syncLoading ? 'Syncing from Square…' : 'Sync Catalogue Now'}
-                  </button>
-                </div>
-
-                {/* Test result */}
-                {testResult && (
-                  <div className={`mt-4 rounded-xl p-4 border ${testResult.error ? 'bg-red-50 border-red-200' : testResult.total === 0 ? 'bg-amber-50 border-amber-200' : 'bg-tpl-pale border-tpl-lime/30'}`}>
-                    {testResult.error ? (
-                      <div className="flex items-start gap-2">
-                        <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
-                        <p className="text-sm text-red-700">{testResult.error}</p>
-                      </div>
-                    ) : testResult.total === 0 ? (
-                      <div className="flex items-start gap-2">
-                        <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-sm font-semibold text-amber-700">Connected, but 0 items found.</p>
-                          <p className="text-xs text-amber-600 mt-1">
-                            {squareEnv === 'sandbox'
-                              ? 'Sandbox catalog is empty. Switch to Production and use your production access token.'
-                              : 'Double-check you pasted the correct production token from the Square Developer Dashboard.'}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-start gap-2">
-                        <CheckCircle className="h-4 w-4 text-tpl-forest mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-sm font-semibold text-tpl-forest">Connected! Found {testResult.total} objects in Square.</p>
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {Object.entries(testResult.byType ?? {}).map(([type, count]) => (
-                              <span key={type} className="text-xs bg-white border border-tpl-lime/40 text-tpl-forest px-2 py-0.5 rounded-full font-medium">
-                                {type}: {count as number}
-                              </span>
-                            ))}
-                          </div>
-                          <p className="text-xs text-tpl-forest/70 mt-2">Click <strong>Sync Catalogue Now</strong> to import into Supabase.</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Sync result */}
-                {syncMessage && (
-                  <div className={`mt-4 flex items-start gap-2 rounded-xl p-4 ${syncMessage.startsWith('Error') ? 'bg-red-50 border border-red-200' : 'bg-tpl-pale border border-tpl-lime/30'}`}>
-                    {syncMessage.startsWith('Error') ? <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" /> : <CheckCircle className="h-4 w-4 text-tpl-forest mt-0.5 flex-shrink-0" />}
-                    <p className={`text-sm ${syncMessage.startsWith('Error') ? 'text-red-700' : 'text-tpl-forest'}`}>{syncMessage}</p>
-                  </div>
-                )}
-              </div>
-            )}
 
             {/* PRODUCTS TAB */}
             {tab === 'products' && (
