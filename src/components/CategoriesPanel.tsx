@@ -1,10 +1,18 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
-  Tag, Plus, Salad, Shirt, Trash2, Edit2, Check, X, Loader2, CornerDownRight, GripVertical,
-  Package, Search as SearchIcon, ChevronUp, ChevronDown, CornerUpLeft,
+  DndContext, DragOverlay, PointerSensor, KeyboardSensor, useSensor, useSensors,
+  closestCorners, useDroppable,
+  type DragStartEvent, type DragEndEvent, type DragOverEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, arrayMove,
+} from '@dnd-kit/sortable';
+import {
+  Tag, Plus, Salad, Shirt, X, Loader2, Package, Search as SearchIcon, GripVertical,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Category, Product } from '../lib/types';
+import { CategoryRow, NestZone } from './CategoryRow';
 
 type Section = 'grocery' | 'clothing';
 
@@ -13,11 +21,9 @@ const SECTIONS: { key: Section; label: string; icon: typeof Salad }[] = [
   { key: 'clothing', label: 'Clothing', icon: Shirt },
 ];
 
-// Drag-and-drop category organiser. What you arrange here is exactly what
-// shoppers see: the section decides which nav tab a category lives under, the
-// order decides the order in the sidebar, and nesting creates subcategories.
 export default function CategoriesPanel() {
   const [cats, setCats] = useState<Category[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; bad?: boolean } | null>(null);
@@ -28,21 +34,14 @@ export default function CategoriesPanel() {
 
   const [subParent, setSubParent] = useState<string | null>(null);
   const [subName, setSubName] = useState('');
-
   const [editId, setEditId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
 
-  // Drag state: what's moving, and where it would land.
-  // Per-category product assignment
-  const [products, setProducts] = useState<Product[]>([]);
   const [itemsFor, setItemsFor] = useState<string | null>(null);
   const [itemSearch, setItemSearch] = useState('');
   const [movingProduct, setMovingProduct] = useState<string | null>(null);
 
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overNest, setOverNest] = useState<string | null>(null);   // drop onto a row -> nest under it
-  const [overGap, setOverGap] = useState<string | null>(null);     // drop in a gap -> reorder before this id
-  const [overSection, setOverSection] = useState<Section | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const flash = (msg: string, bad = false) => setToast({ msg, bad });
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 4000); return () => clearTimeout(t); }, [toast]);
@@ -57,27 +56,87 @@ export default function CategoriesPanel() {
     setProducts((prodRes.data as Product[]) ?? []);
     setLoading(false);
   }, []);
-
-  const productsIn = (catId: string) => products.filter(p => p.category_id === catId);
-
-  // category_overridden tells the Square sync to leave this placement alone.
-  const setProductCategory = async (productId: string, categoryId: string | null) => {
-    setMovingProduct(productId);
-    const { error } = await supabase
-      .from('products')
-      .update({ category_id: categoryId, category_overridden: true })
-      .eq('id', productId);
-    if (error) flash(error.message, true);
-    else {
-      setProducts(prev => prev.map(p => (p.id === productId ? { ...p, category_id: categoryId } : p)));
-    }
-    setMovingProduct(null);
-  };
   useEffect(() => { load(); }, [load]);
 
   const topLevel = (s: Section) => cats.filter(c => c.section === s && !c.parent_id);
   const childrenOf = (id: string) => cats.filter(c => c.parent_id === id);
   const byId = (id: string) => cats.find(c => c.id === id);
+  const productsIn = (catId: string) => products.filter(p => p.category_id === catId);
+
+  // A short press-and-move starts a drag, so ordinary clicks on the row's own
+  // buttons still register as clicks.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const persistOrder = async (ordered: Category[]) =>
+    Promise.all(ordered.map((c, i) => supabase.from('categories').update({ sort_order: i + 1 }).eq('id', c.id)));
+
+  // ------------------------------------------------------------------ drag
+  const sectionOfDrop = (overId: string): Section | null => {
+    if (overId === 'list:grocery') return 'grocery';
+    if (overId === 'list:clothing') return 'clothing';
+    const over = byId(overId);
+    return over && !over.parent_id ? (over.section as Section) : null;
+  };
+
+  // Hop the row between lists mid-drag so it visibly lands where it will end up.
+  const onDragOver = (e: DragOverEvent) => {
+    const { active, over } = e;
+    if (!over) return;
+    const moving = byId(String(active.id));
+    if (!moving || moving.parent_id) return;
+    const target = sectionOfDrop(String(over.id));
+    if (!target || target === moving.section) return;
+    setCats(prev => prev.map(c => (c.id === moving.id ? { ...c, section: target } : c)));
+  };
+
+  const onDragEnd = async (e: DragEndEvent) => {
+    const { active, over } = e;
+    setActiveId(null);
+    if (!over) return;
+
+    const moving = byId(String(active.id));
+    if (!moving) return;
+    const overId = String(over.id);
+
+    // Dropped on a "put it inside this one" strip.
+    if (overId.startsWith('nest:')) {
+      const parentId = overId.slice(5);
+      if (parentId === moving.id) return;
+      if (childrenOf(moving.id).length > 0) {
+        flash(`“${moving.name}” has subcategories, so it can't become one. Move those out first.`, true);
+        await load();
+        return;
+      }
+      setBusyId(moving.id);
+      const { error } = await supabase.from('categories').update({ parent_id: parentId }).eq('id', moving.id);
+      if (error) flash(error.message, true);
+      else flash(`“${moving.name}” is now inside “${byId(parentId)?.name}”.`);
+      await load();
+      setBusyId(null);
+      return;
+    }
+
+    const section = sectionOfDrop(overId) ?? (moving.section as Section);
+    const list = topLevel(section);
+    const from = list.findIndex(c => c.id === moving.id);
+    const to = overId.startsWith('list:') ? list.length - 1 : list.findIndex(c => c.id === overId);
+
+    setBusyId(moving.id);
+    // Section (and un-nesting) is written first, so the ordering write lands on
+    // the list the row actually belongs to.
+    if (moving.section !== section || moving.parent_id) {
+      const { error } = await supabase.from('categories')
+        .update({ section, parent_id: null }).eq('id', moving.id);
+      if (error) { flash(error.message, true); await load(); setBusyId(null); return; }
+    }
+    const ordered = from >= 0 && to >= 0 ? arrayMove(list, from, to) : list;
+    await persistOrder(ordered);
+    await load();
+    setBusyId(null);
+  };
 
   // ---------------------------------------------------------------- create
   const createCategory = async (name: string, section: Section, parentId: string | null) => {
@@ -100,13 +159,12 @@ export default function CategoriesPanel() {
 
   const addSub = async (parent: Category) => {
     setBusyId(parent.id);
-    if (await createCategory(subName, parent.section, parent.id)) {
+    if (await createCategory(subName, parent.section as Section, parent.id)) {
       setSubName(''); setSubParent(null); flash('Subcategory added.');
     }
     setBusyId(null);
   };
 
-  // ------------------------------------------------------- rename / delete
   const rename = async (id: string) => {
     const trimmed = editName.trim();
     if (!trimmed) return;
@@ -129,128 +187,26 @@ export default function CategoriesPanel() {
     setBusyId(null);
   };
 
-  // ------------------------------------------------------------ drag drop
-  // Write a whole list's positions in one go so the order is stable.
-  const persistOrder = async (ordered: Category[]) => {
-    await Promise.all(
-      ordered.map((c, i) =>
-        supabase.from('categories').update({ sort_order: i + 1 }).eq('id', c.id)),
-    );
-  };
-
-  const dropToSection = async (section: Section) => {
-    const moving = dragId ? byId(dragId) : null;
-    if (!moving) return;
-    setBusyId(moving.id);
-    const { error } = await supabase.from('categories')
-      .update({ section, parent_id: null }).eq('id', moving.id);
-    if (error) flash(error.message, true);
-    else {
-      const rest = topLevel(section).filter(c => c.id !== moving.id);
-      await persistOrder([...rest, { ...moving, section, parent_id: null }]);
-      flash(`Moved “${moving.name}” to ${SECTIONS.find(s => s.key === section)!.label}.`);
-      await load();
-    }
-    setBusyId(null);
-  };
-
-  const dropToNest = async (parent: Category) => {
-    const moving = dragId ? byId(dragId) : null;
-    if (!moving || moving.id === parent.id) return;
-    if (parent.parent_id) { flash('Categories can only be nested one level deep.', true); return; }
-    if (childrenOf(moving.id).length > 0) {
-      flash(`“${moving.name}” has subcategories, so it can't become one itself. Move its subcategories out first.`, true);
-      return;
-    }
-    setBusyId(moving.id);
-    // The database trigger also pulls the child into its parent's section.
-    const { error } = await supabase.from('categories')
-      .update({ parent_id: parent.id }).eq('id', moving.id);
-    if (error) flash(error.message, true);
-    else { flash(`“${moving.name}” is now under “${parent.name}”.`); await load(); }
-    setBusyId(null);
-  };
-
-  const dropToGap = async (beforeId: string, section: Section) => {
-    const moving = dragId ? byId(dragId) : null;
-    if (!moving || moving.id === beforeId) return;
-    setBusyId(moving.id);
-
-    if (moving.section !== section || moving.parent_id) {
-      const { error } = await supabase.from('categories')
-        .update({ section, parent_id: null }).eq('id', moving.id);
-      if (error) { flash(error.message, true); setBusyId(null); return; }
-    }
-
-    const list = topLevel(section).filter(c => c.id !== moving.id);
-    const at = list.findIndex(c => c.id === beforeId);
-    const next = [...list];
-    next.splice(at < 0 ? next.length : at, 0, { ...moving, section, parent_id: null });
-    await persistOrder(next);
-    await load();
-    setBusyId(null);
-  };
-
-  // Dragging across a long, scrolling list is fiddly, so every move is also
-  // available as an explicit control that can't miss its target.
-  const siblingsOf = (cat: Category) =>
-    cat.parent_id ? childrenOf(cat.parent_id) : topLevel(cat.section as Section);
-
-  const nudge = async (cat: Category, dir: -1 | 1) => {
-    const list = siblingsOf(cat);
-    const i = list.findIndex(c => c.id === cat.id);
-    const j = i + dir;
-    if (i < 0 || j < 0 || j >= list.length) return;
+  const moveOut = async (cat: Category) => {
     setBusyId(cat.id);
-    const next = [...list];
-    [next[i], next[j]] = [next[j], next[i]];
-    await persistOrder(next);
-    await load();
+    const { error } = await supabase.from('categories')
+      .update({ parent_id: null, section: cat.section }).eq('id', cat.id);
+    if (error) flash(error.message, true); else { flash(`“${cat.name}” moved to the top level.`); await load(); }
     setBusyId(null);
   };
 
-  // One control for both "switch section" and "make a subcategory of X".
-  const moveTo = async (cat: Category, value: string) => {
-    if (!value) return;
-    setBusyId(cat.id);
-    let error;
-    if (value.startsWith('sec:')) {
-      const section = value.slice(4) as Section;
-      ({ error } = await supabase.from('categories')
-        .update({ section, parent_id: null }).eq('id', cat.id));
-      if (!error) flash(`“${cat.name}” moved to ${SECTIONS.find(s => s.key === section)!.label}.`);
-    } else {
-      const parentId = value.slice(4);
-      if (childrenOf(cat.id).length > 0) {
-        flash(`“${cat.name}” has subcategories, so it can't become one. Move those out first.`, true);
-        setBusyId(null);
-        return;
-      }
-      ({ error } = await supabase.from('categories')
-        .update({ parent_id: parentId }).eq('id', cat.id));
-      if (!error) flash(`“${cat.name}” is now under “${byId(parentId)?.name}”.`);
-    }
-    if (error) flash(error.message, true); else await load();
-    setBusyId(null);
+  // category_overridden tells the Square sync to leave this placement alone.
+  const setProductCategory = async (productId: string, categoryId: string | null) => {
+    setMovingProduct(productId);
+    const { error } = await supabase.from('products')
+      .update({ category_id: categoryId, category_overridden: true }).eq('id', productId);
+    if (error) flash(error.message, true);
+    else setProducts(prev => prev.map(p => (p.id === productId ? { ...p, category_id: categoryId } : p)));
+    setMovingProduct(null);
   };
 
-  const clearDrag = () => { setDragId(null); setOverNest(null); setOverGap(null); setOverSection(null); };
-
-  // ------------------------------------------------------------------ view
   if (loading) return <div className="flex justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-tpl-forest" /></div>;
 
-  const Gap = ({ beforeId, section }: { beforeId: string; section: Section }) => (
-    <div
-      onDragOver={e => { e.preventDefault(); e.stopPropagation(); setOverGap(beforeId); setOverNest(null); }}
-      onDragLeave={() => setOverGap(g => (g === beforeId ? null : g))}
-      onDrop={e => { e.preventDefault(); e.stopPropagation(); dropToGap(beforeId, section); clearDrag(); }}
-      className={`rounded transition-all ${
-        overGap === beforeId ? 'h-6 bg-tpl-lime/60 border-2 border-dashed border-tpl-forest my-1' : 'h-3 -my-0.5'
-      }`}
-    />
-  );
-
-  // Add / remove products for one category, without leaving this screen.
   const ItemsDrawer = ({ cat }: { cat: Category }) => {
     const assigned = productsIn(cat.id);
     const term = itemSearch.trim().toLowerCase();
@@ -280,7 +236,6 @@ export default function CategoriesPanel() {
             </div>
           )}
         </div>
-
         <div>
           <div className="relative">
             <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
@@ -288,164 +243,137 @@ export default function CategoriesPanel() {
               placeholder={`Search products to add to ${cat.name}…`}
               className="w-full pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
           </div>
-          {term && (
-            candidates.length === 0 ? (
-              <p className="text-xs text-gray-400 italic mt-2">No other products match “{itemSearch}”.</p>
-            ) : (
-              <div className="max-h-48 overflow-y-auto divide-y divide-gray-50 mt-1.5">
-                {candidates.map(p => {
-                  const current = p.category_id ? cats.find(c => c.id === p.category_id) : null;
-                  return (
-                    <div key={p.id} className="flex items-center justify-between gap-2 py-1.5">
-                      <span className="text-xs text-gray-700 truncate">
-                        {p.name}
-                        {current && <span className="text-gray-400"> · in {current.name}</span>}
-                      </span>
-                      <button onClick={() => setProductCategory(p.id, cat.id)} disabled={movingProduct === p.id}
-                        className="text-[11px] px-2 py-1 bg-tpl-forest text-white rounded-lg font-medium hover:bg-tpl-mid transition-colors disabled:opacity-40 flex-shrink-0">
-                        {movingProduct === p.id ? '…' : 'Add'}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )
-          )}
-          <p className="text-[10px] text-gray-400 mt-1.5">
-            Moving a product here keeps it here — the Square sync won't move it back.
-          </p>
-        </div>
-      </div>
-    );
-  };
-
-  const Row = ({ cat, isChild, section }: { cat: Category; isChild: boolean; section: Section }) => {
-    const dragging = dragId === cat.id;
-    const nestTarget = overNest === cat.id && dragId && dragId !== cat.id;
-    return (
-      <div
-        draggable={editId !== cat.id}
-        onDragStart={e => { e.stopPropagation(); setDragId(cat.id); e.dataTransfer.effectAllowed = 'move'; }}
-        onDragEnd={clearDrag}
-        onDragOver={e => {
-          if (isChild || !dragId || dragId === cat.id) return;
-          e.preventDefault();
-          const r = e.currentTarget.getBoundingClientRect();
-          const nearMiddle = e.clientY > r.top + r.height * 0.28 && e.clientY < r.bottom - r.height * 0.28;
-          if (nearMiddle) { e.stopPropagation(); setOverNest(cat.id); setOverGap(null); }
-          else setOverNest(n => (n === cat.id ? null : n));
-        }}
-        onDragLeave={() => setOverNest(n => (n === cat.id ? null : n))}
-        onDrop={e => {
-          if (isChild) return;
-          e.preventDefault(); e.stopPropagation(); dropToNest(cat); clearDrag();
-        }}
-        className={`flex flex-wrap items-center justify-between gap-3 py-2.5 px-2 rounded-xl transition-all ${
-          isChild ? 'ml-8' : ''
-        } ${dragging ? 'opacity-40' : ''} ${nestTarget ? 'ring-2 ring-tpl-forest bg-tpl-pale/50' : 'hover:bg-gray-50'}`}
-      >
-        <div className="flex items-center gap-2 min-w-0">
-          <span title="Drag to move" className="flex-shrink-0"><GripVertical className="h-4 w-4 text-gray-300 cursor-grab active:cursor-grabbing" /></span>
-          <span className="flex flex-col flex-shrink-0">
-            <button onClick={() => nudge(cat, -1)} disabled={busyId === cat.id} title="Move up"
-              className="text-gray-300 hover:text-tpl-forest transition-colors leading-none disabled:opacity-30">
-              <ChevronUp className="h-3.5 w-3.5" />
-            </button>
-            <button onClick={() => nudge(cat, 1)} disabled={busyId === cat.id} title="Move down"
-              className="text-gray-300 hover:text-tpl-forest transition-colors leading-none disabled:opacity-30">
-              <ChevronDown className="h-3.5 w-3.5" />
-            </button>
-          </span>
-          {isChild && <CornerDownRight className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />}
-          {editId === cat.id ? (
-            <div className="flex items-center gap-1.5">
-              <input value={editName} onChange={e => setEditName(e.target.value)} autoFocus
-                onKeyDown={e => { if (e.key === 'Enter') rename(cat.id); if (e.key === 'Escape') setEditId(null); }}
-                className="px-2 py-1 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
-              <button onClick={() => rename(cat.id)} className="p-1 text-tpl-forest hover:text-tpl-mid"><Check className="h-4 w-4" /></button>
-              <button onClick={() => setEditId(null)} className="p-1 text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
+          {term && (candidates.length === 0 ? (
+            <p className="text-xs text-gray-400 italic mt-2">No other products match “{itemSearch}”.</p>
+          ) : (
+            <div className="max-h-48 overflow-y-auto divide-y divide-gray-50 mt-1.5">
+              {candidates.map(p => {
+                const current = p.category_id ? byId(p.category_id) : null;
+                return (
+                  <div key={p.id} className="flex items-center justify-between gap-2 py-1.5">
+                    <span className="text-xs text-gray-700 truncate">
+                      {p.name}{current && <span className="text-gray-400"> · in {current.name}</span>}
+                    </span>
+                    <button onClick={() => setProductCategory(p.id, cat.id)} disabled={movingProduct === p.id}
+                      className="text-[11px] px-2 py-1 bg-tpl-forest text-white rounded-lg font-medium hover:bg-tpl-mid transition-colors disabled:opacity-40 flex-shrink-0">
+                      {movingProduct === p.id ? '…' : 'Add'}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
-          ) : (
-            <>
-              <span className={`text-sm truncate ${isChild ? 'text-gray-600' : 'font-semibold text-tpl-dark'}`}>{cat.name}</span>
-              {cat.is_brand && <span className="text-[10px] text-gray-400 border border-gray-200 rounded px-1.5 py-0.5">Brand</span>}
-              {nestTarget && <span className="text-[10px] font-bold text-tpl-forest">drop to nest inside</span>}
-            </>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1.5 flex-shrink-0">
-          <button
-            onClick={() => { setItemsFor(itemsFor === cat.id ? null : cat.id); setItemSearch(''); }}
-            title="Add or remove products in this category"
-            className={`text-[11px] px-2 py-1 rounded-lg border transition-colors flex items-center gap-1 ${
-              itemsFor === cat.id
-                ? 'border-tpl-forest bg-tpl-pale text-tpl-forest'
-                : 'border-gray-200 text-gray-600 hover:border-tpl-forest hover:text-tpl-forest'
-            }`}>
-            <Package className="h-3 w-3" /> Items ({productsIn(cat.id).length})
-          </button>
-          {!isChild && (
-            <button onClick={() => { setSubParent(subParent === cat.id ? null : cat.id); setSubName(''); }}
-              title="Add subcategory"
-              className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 text-gray-600 hover:border-tpl-forest hover:text-tpl-forest transition-colors flex items-center gap-1">
-              <Plus className="h-3 w-3" /> Sub
-            </button>
-          )}
-          {isChild ? (
-            <button
-              onClick={async () => {
-                setBusyId(cat.id);
-                const { error } = await supabase.from('categories').update({ parent_id: null, section }).eq('id', cat.id);
-                if (error) flash(error.message, true); else { flash(`“${cat.name}” moved to the top level.`); await load(); }
-                setBusyId(null);
-              }}
-              title="Move out to top level"
-              className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-tpl-forest hover:text-tpl-forest transition-colors flex items-center gap-1">
-              <CornerUpLeft className="h-3 w-3" /> Move out
-            </button>
-          ) : (
-            <select
-              value=""
-              onChange={e => { moveTo(cat, e.target.value); e.currentTarget.value = ''; }}
-              disabled={busyId === cat.id}
-              title="Move this category"
-              className="text-[11px] px-2 py-1 rounded-lg border border-gray-200 text-gray-600 bg-white hover:border-tpl-forest focus:outline-none focus:ring-2 focus:ring-tpl-lime max-w-[110px]">
-              <option value="">Move to…</option>
-              <optgroup label="Section">
-                {SECTIONS.map(sc => (
-                  <option key={sc.key} value={`sec:${sc.key}`}>{sc.label}</option>
-                ))}
-              </optgroup>
-              <optgroup label="Make a subcategory of">
-                {cats
-                  .filter(c => !c.parent_id && c.id !== cat.id)
-                  .map(c => <option key={c.id} value={`par:${c.id}`}>{c.name}</option>)}
-              </optgroup>
-            </select>
-          )}
-          <button onClick={() => { setEditId(cat.id); setEditName(cat.name); }} title="Rename"
-            className="p-1.5 text-gray-400 hover:text-tpl-forest transition-colors"><Edit2 className="h-3.5 w-3.5" /></button>
-          <button onClick={() => remove(cat)} disabled={busyId === cat.id} title="Delete"
-            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+          ))}
+          <p className="text-[10px] text-gray-400 mt-1.5">Moving a product here keeps it here — the Square sync won't move it back.</p>
         </div>
       </div>
     );
   };
+
+  const SectionList = ({ sec }: { sec: typeof SECTIONS[number] }) => {
+    const tops = topLevel(sec.key);
+    const { setNodeRef, isOver } = useDroppable({ id: `list:${sec.key}` });
+    return (
+      <div className={`bg-white rounded-2xl shadow-card overflow-hidden transition-all ${
+        isOver && activeId ? 'ring-2 ring-tpl-forest' : ''
+      }`}>
+        <div className="px-5 py-3 bg-tpl-cream/50 border-b border-gray-100 flex items-center gap-2">
+          <sec.icon className="h-4 w-4 text-tpl-forest" />
+          <h3 className="font-semibold text-tpl-dark text-sm">{sec.label}</h3>
+          <span className="text-xs text-gray-400">· {tops.length}</span>
+        </div>
+        <div ref={setNodeRef} className="px-3 py-2 min-h-[140px]">
+          <SortableContext items={tops.map(c => c.id)} strategy={verticalListSortingStrategy}>
+            {tops.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-10">Drag a category here, or add one above.</p>
+            ) : tops.map(cat => (
+              <div key={cat.id}>
+                <CategoryRow
+                  cat={cat}
+                  isChild={false}
+                  itemCount={productsIn(cat.id).length}
+                  busy={busyId === cat.id}
+                  editing={editId === cat.id}
+                  editName={editName}
+                  itemsOpen={itemsFor === cat.id}
+                  dragging={!!activeId}
+                  onEditName={setEditName}
+                  onStartEdit={() => { setEditId(cat.id); setEditName(cat.name); }}
+                  onCancelEdit={() => setEditId(null)}
+                  onRename={() => rename(cat.id)}
+                  onDelete={() => remove(cat)}
+                  onToggleItems={() => { setItemsFor(itemsFor === cat.id ? null : cat.id); setItemSearch(''); }}
+                  onToggleSub={() => { setSubParent(subParent === cat.id ? null : cat.id); setSubName(''); }}
+                  onMoveOut={() => moveOut(cat)}
+                />
+                <NestZone parent={cat} active={!!activeId && activeId !== cat.id} />
+                {childrenOf(cat.id).map(child => (
+                  <div key={child.id}>
+                    <CategoryRow
+                      cat={child}
+                      isChild
+                      itemCount={productsIn(child.id).length}
+                      busy={busyId === child.id}
+                      editing={editId === child.id}
+                      editName={editName}
+                      itemsOpen={itemsFor === child.id}
+                      dragging={!!activeId}
+                      onEditName={setEditName}
+                      onStartEdit={() => { setEditId(child.id); setEditName(child.name); }}
+                      onCancelEdit={() => setEditId(null)}
+                      onRename={() => rename(child.id)}
+                      onDelete={() => remove(child)}
+                      onToggleItems={() => { setItemsFor(itemsFor === child.id ? null : child.id); setItemSearch(''); }}
+                      onToggleSub={() => {}}
+                      onMoveOut={() => moveOut(child)}
+                    />
+                    {itemsFor === child.id && <ItemsDrawer cat={child} />}
+                  </div>
+                ))}
+                {itemsFor === cat.id && <ItemsDrawer cat={cat} />}
+                {subParent === cat.id && (
+                  <div className="ml-8 pb-2 flex items-center gap-2">
+                    <input value={subName} onChange={e => setSubName(e.target.value)} autoFocus
+                      onKeyDown={e => { if (e.key === 'Enter') addSub(cat); if (e.key === 'Escape') setSubParent(null); }}
+                      placeholder={`Subcategory of ${cat.name}…`}
+                      className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
+                    <button onClick={() => addSub(cat)} disabled={busyId === cat.id}
+                      className="text-xs px-3 py-1.5 bg-tpl-forest text-white rounded-lg font-medium hover:bg-tpl-mid transition-colors disabled:opacity-40">Add</button>
+                    <button onClick={() => setSubParent(null)} className="p-1.5 text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </SortableContext>
+        </div>
+      </div>
+    );
+  };
+
+  const dragged = activeId ? byId(activeId) : null;
+
+  const duplicates = (() => {
+    const m = new Map<string, Category[]>();
+    cats.filter(c => !c.parent_id).forEach(c => {
+      const k = c.name.trim().toLowerCase();
+      m.set(k, [...(m.get(k) ?? []), c]);
+    });
+    return [...m.values()].filter(g => g.length > 1);
+  })();
 
   return (
     <div className="space-y-4">
-      {/* Add + how it works */}
       <div className="bg-white rounded-2xl shadow-card p-6">
         <h2 className="font-semibold text-tpl-dark text-lg mb-1 flex items-center gap-2">
           <Tag className="h-5 w-5 text-tpl-forest" /> Categories
         </h2>
         <p className="text-sm text-gray-500 mb-1">
-          This is exactly what shoppers see. Use the <b>▲▼ arrows</b> to reorder and the
-          <b> “Move to…” </b> menu to switch section or turn a category into a subcategory —
-          or drag rows if you prefer. <b>Items (N)</b> adds and removes the products inside each one.
+          This is exactly what shoppers see. <b>Grab the ⠿ handle</b> and drag a category to reorder it,
+          drag it across to the other panel to switch section, or drop it on the
+          <b> “drop here to put it inside…” </b> strip to make it a subcategory.
         </p>
-        <p className="text-xs text-gray-400 mb-4">The order here is the order in the storefront sidebar. Subcategories always follow their parent's section.</p>
+        <p className="text-xs text-gray-400 mb-4">
+          The order here is the order in the storefront sidebar. <b>Items (N)</b> adds and removes the products inside a category.
+        </p>
 
         <div className="flex flex-wrap items-end gap-2">
           <label className="text-[11px] font-medium text-gray-500 flex-1 min-w-[180px]">New category
@@ -468,33 +396,22 @@ export default function CategoriesPanel() {
         </div>
       </div>
 
-      {/* Duplicates happen when a locally-seeded category and a Square one share
-          a name; flag them so they can be merged rather than confusing shoppers. */}
-      {(() => {
-        const counts = new Map<string, Category[]>();
-        cats.filter(c => !c.parent_id).forEach(c => {
-          const k = c.name.trim().toLowerCase();
-          counts.set(k, [...(counts.get(k) ?? []), c]);
-        });
-        const dupes = [...counts.values()].filter(g => g.length > 1);
-        if (dupes.length === 0) return null;
-        return (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
-            <p className="font-semibold mb-1">Duplicate categories</p>
-            <p className="text-xs mb-2">
-              These names appear more than once, so shoppers see them twice in the menu. Move any products
-              across with <b>Items</b>, then delete the empty one.
-            </p>
-            <ul className="text-xs space-y-0.5">
-              {dupes.map(g => (
-                <li key={g[0].name}>
-                  <b>{g[0].name}</b> — {g.map(c => `${productsIn(c.id).length} item${productsIn(c.id).length !== 1 ? 's' : ''}`).join(' and ')}
-                </li>
-              ))}
-            </ul>
-          </div>
-        );
-      })()}
+      {duplicates.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+          <p className="font-semibold mb-1">Duplicate categories</p>
+          <p className="text-xs mb-2">
+            These names appear twice, so shoppers see them twice in the menu. Move any products across
+            with <b>Items</b>, then delete the empty one.
+          </p>
+          <ul className="text-xs space-y-0.5">
+            {duplicates.map(g => (
+              <li key={g[0].id}>
+                <b>{g[0].name}</b> — {g.map(c => `${productsIn(c.id).length} items`).join(' and ')}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {toast && (
         <div className={`text-sm px-4 py-2.5 rounded-xl ${toast.bad ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-tpl-dark text-white'}`}>
@@ -502,90 +419,31 @@ export default function CategoriesPanel() {
         </div>
       )}
 
-      {/* Two drop panels, side by side */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {SECTIONS.map(sec => {
-          const tops = topLevel(sec.key);
-          const active = overSection === sec.key && dragId;
-          return (
-            <div
-              key={sec.key}
-              onDragOver={e => { if (!dragId) return; e.preventDefault(); setOverSection(sec.key); }}
-              onDragLeave={() => setOverSection(s => (s === sec.key ? null : s))}
-              onDrop={e => { e.preventDefault(); dropToSection(sec.key); clearDrag(); }}
-              className={`bg-white rounded-2xl shadow-card overflow-hidden transition-all ${
-                active ? 'ring-2 ring-tpl-forest' : ''
-              }`}
-            >
-              <div className="px-5 py-3 bg-tpl-cream/50 border-b border-gray-100 flex items-center gap-2">
-                <sec.icon className="h-4 w-4 text-tpl-forest" />
-                <h3 className="font-semibold text-tpl-dark text-sm">{sec.label}</h3>
-                <span className="text-xs text-gray-400">· {tops.length}</span>
-                {active && <span className="ml-auto text-[11px] font-bold text-tpl-forest">drop here</span>}
-              </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={(e: DragStartEvent) => setActiveId(String(e.active.id))}
+        onDragOver={onDragOver}
+        onDragEnd={onDragEnd}
+        onDragCancel={() => setActiveId(null)}
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+          {SECTIONS.map(sec => <SectionList key={sec.key} sec={sec} />)}
+        </div>
 
-              <div className="px-3 py-2 min-h-[120px]">
-                {tops.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-8">
-                    Nothing here yet — drag a category across, or add one above.
-                  </p>
-                ) : (
-                  tops.map(cat => (
-                    <div key={cat.id}>
-                      <Gap beforeId={cat.id} section={sec.key} />
-                      <Row cat={cat} isChild={false} section={sec.key} />
-                      {itemsFor === cat.id && <ItemsDrawer cat={cat} />}
-                      {childrenOf(cat.id).map(child => (
-                        <div key={child.id}>
-                          <Row cat={child} isChild section={sec.key} />
-                          {itemsFor === child.id && <ItemsDrawer cat={child} />}
-                        </div>
-                      ))}
-                      {cat.id === tops[tops.length - 1].id && (
-                        <div
-                          onDragOver={e => { e.preventDefault(); setOverGap(`end-${sec.key}`); setOverNest(null); }}
-                          onDragLeave={() => setOverGap(g => (g === `end-${sec.key}` ? null : g))}
-                          onDrop={async e => {
-                            e.preventDefault();
-                            const moving = dragId ? byId(dragId) : null;
-                            clearDrag();
-                            if (!moving) return;
-                            setBusyId(moving.id);
-                            if (moving.section !== sec.key || moving.parent_id) {
-                              await supabase.from('categories')
-                                .update({ section: sec.key, parent_id: null }).eq('id', moving.id);
-                            }
-                            const rest = topLevel(sec.key).filter(c => c.id !== moving.id);
-                            await persistOrder([...rest, { ...moving, section: sec.key, parent_id: null }]);
-                            await load();
-                            setBusyId(null);
-                          }}
-                          className={`rounded transition-all ${
-                            overGap === `end-${sec.key}`
-                              ? 'h-6 bg-tpl-lime/60 border-2 border-dashed border-tpl-forest my-1'
-                              : 'h-3'
-                          }`}
-                        />
-                      )}
-                      {subParent === cat.id && (
-                        <div className="ml-8 pb-2 flex items-center gap-2">
-                          <input value={subName} onChange={e => setSubName(e.target.value)} autoFocus
-                            onKeyDown={e => { if (e.key === 'Enter') addSub(cat); if (e.key === 'Escape') setSubParent(null); }}
-                            placeholder={`Subcategory of ${cat.name}…`}
-                            className="flex-1 px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-tpl-lime" />
-                          <button onClick={() => addSub(cat)} disabled={busyId === cat.id}
-                            className="text-xs px-3 py-1.5 bg-tpl-forest text-white rounded-lg font-medium hover:bg-tpl-mid transition-colors disabled:opacity-40">Add</button>
-                          <button onClick={() => setSubParent(null)} className="p-1.5 text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
+        {/* The row follows the cursor, so it's always clear what's moving. */}
+        <DragOverlay dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)' }}>
+          {dragged ? (
+            <div className="flex items-center gap-2 bg-white rounded-xl shadow-card-hover border-2 border-tpl-forest px-3 py-2.5 cursor-grabbing">
+              <GripVertical className="h-4 w-4 text-tpl-forest" />
+              <span className="text-sm font-semibold text-tpl-dark">{dragged.name}</span>
+              <span className="text-[11px] text-gray-400 flex items-center gap-1">
+                <Package className="h-3 w-3" /> {productsIn(dragged.id).length}
+              </span>
             </div>
-          );
-        })}
-      </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
     </div>
   );
 }
