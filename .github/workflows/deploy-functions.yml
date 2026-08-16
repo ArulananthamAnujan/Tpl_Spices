@@ -1,0 +1,41 @@
+name: Deploy Supabase Edge Functions
+
+# Edge Functions deploy separately from the website, so a Netlify deploy alone
+# leaves them stale. This pushes them to Supabase whenever one changes on main,
+# and can also be run by hand from the Actions tab.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+      - '.github/workflows/deploy-functions.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # setup-demo-users is deliberately excluded: it has no permission check
+      # and recreates accounts with known passwords, so it must not exist on a
+      # live project.
+      - name: Deploy functions
+        run: |
+          set -euo pipefail
+          for fn in create-order sync-catalog manage-staff generate-product-image; do
+            if [ -d "supabase/functions/$fn" ]; then
+              echo "::group::Deploying $fn"
+              supabase functions deploy "$fn" --project-ref "$PROJECT_REF"
+              echo "::endgroup::"
+            fi
+          done
