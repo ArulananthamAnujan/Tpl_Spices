@@ -159,6 +159,7 @@ Deno.serve(async (req: Request) => {
     // Products filed into a category/subcategory here keep that placement —
     // Square has no subcategories, so its category would otherwise win.
     let prodCount = 0;
+    let imagesLinked = 0;
     if (squareItems.length > 0) {
       const { data: existingProds } = await supabaseAdmin
         .from("products")
@@ -171,34 +172,43 @@ Deno.serve(async (req: Request) => {
         const itemData = item.item_data ?? {};
         const categorySquareId = itemData.category_id ?? itemData.categories?.[0]?.id ?? null;
         const imageId = item.image_ids?.[0] ?? itemData.image_ids?.[0] ?? null;
-        return {
+        const squareImageUrl = imageId ? (imageMap[imageId] ?? null) : null;
+        const row: Record<string, unknown> = {
           square_item_id: item.id,
           name: itemData.name ?? "Unknown",
           description: itemData.description ?? null,
           category_id: categorySquareId ? (catMap[categorySquareId] ?? null) : null,
-          image_url: imageId ? (imageMap[imageId] ?? null) : null,
+          image_url: squareImageUrl,
           active: !item.is_deleted,
         };
+
+        // Never write a null photo. Square only stores images for some items,
+        // so sending null would erase pictures uploaded or generated in the
+        // dashboard — the item would silently lose its photo on every sync.
+        if (!squareImageUrl) delete row.image_url;
+        else imagesLinked++;
+
+        // Products filed into a category here keep that placement; Square has
+        // no subcategories, so its category would otherwise win.
+        if (categoryPinned.has(item.id)) delete row.category_id;
+
+        return row;
       });
 
-      // Two passes so each payload has a uniform set of columns.
-      const followSquare = base.filter(p => !categoryPinned.has(p.square_item_id));
-      const keepCategory = base
-        .filter(p => categoryPinned.has(p.square_item_id))
-        .map(({ category_id: _ignored, ...rest }) => rest);
-
-      if (followSquare.length > 0) {
+      // Each upsert must carry a uniform set of columns, so send one batch per
+      // distinct shape rather than forcing every row to include every field.
+      const shapes = new Map<string, Record<string, unknown>[]>();
+      for (const row of base) {
+        const key = Object.keys(row).sort().join(",");
+        shapes.set(key, [...(shapes.get(key) ?? []), row]);
+      }
+      for (const rows of shapes.values()) {
         const { error } = await supabaseAdmin
           .from("products")
-          .upsert(followSquare, { onConflict: "square_item_id" });
+          .upsert(rows, { onConflict: "square_item_id" });
         if (error) throw new Error("products upsert: " + error.message);
       }
-      if (keepCategory.length > 0) {
-        const { error } = await supabaseAdmin
-          .from("products")
-          .upsert(keepCategory, { onConflict: "square_item_id" });
-        if (error) throw new Error("products upsert (pinned category): " + error.message);
-      }
+
       prodCount = base.length;
     }
 
@@ -344,6 +354,7 @@ Deno.serve(async (req: Request) => {
         categories: catCount,
         products: prodCount,
         variations: varCount,
+        imagesLinked,
         inventoryUpdated,
         inventoryNotes,
         squareTotal: allObjects.length,

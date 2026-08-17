@@ -164,8 +164,10 @@ export default function PricingPromotionsPanel() {
       setNeedToken(false);
       const inv = body.inventoryUpdated ?? 0;
       const notes = (body.inventoryNotes ?? []).join(' ');
+      const pics = body.imagesLinked ?? 0;
       setSyncMsg(
         `Synced ${body.products ?? 0} products and ${body.variations ?? 0} prices from Square.` +
+        (pics > 0 ? ` Linked ${pics} photo${pics > 1 ? 's' : ''}.` : '') +
         (inv > 0 ? ` Updated stock on ${inv} item${inv > 1 ? 's' : ''}.` : '') +
         (notes ? ` ${notes}` : ''),
       );
