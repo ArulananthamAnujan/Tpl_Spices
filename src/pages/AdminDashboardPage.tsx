@@ -337,6 +337,10 @@ export default function AdminDashboardPage() {
   const [uploadingLocalImages, setUploadingLocalImages] = useState(false);
   const [localUploadProgress, setLocalUploadProgress] = useState({ done: 0, total: 0, current: '', errors: 0 });
   const [localUploadDone, setLocalUploadDone] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<
+    { restored: number; stillMissing: number; filesSeen: number; error?: undefined } | { error: string } | null
+  >(null);
 
   const uploadLocalRiceImages = async () => {
     const riceProducts = products.filter(p => p.image_url?.startsWith('/images/'));
@@ -367,6 +371,59 @@ export default function AdminDashboardPage() {
     setLocalUploadProgress({ done: riceProducts.length, total: riceProducts.length, current: '', errors });
     setLocalUploadDone(true);
     setUploadingLocalImages(false);
+  };
+
+  // Photos uploaded or generated here are stored as product-images/products/<id>
+  // and product-images/ai/<id>, so a cleared image_url can be rebuilt exactly
+  // from the bucket listing rather than guessed.
+  const restorePhotosFromStorage = async () => {
+    setRestoring(true);
+    setRestoreResult(null);
+    try {
+      const bucket = supabase.storage.from('product-images');
+      const found = new Map<string, string>(); // product id -> storage path
+
+      // 'ai' is listed first so a real uploaded photo wins if both exist.
+      for (const folder of ['ai', 'products']) {
+        let offset = 0;
+        for (;;) {
+          const { data, error } = await bucket.list(folder, { limit: 100, offset });
+          if (error) throw new Error(error.message);
+          if (!data || data.length === 0) break;
+          for (const file of data) {
+            const id = file.name.replace(/\.[^.]+$/, '');
+            found.set(id, `${folder}/${file.name}`);
+          }
+          if (data.length < 100) break;
+          offset += 100;
+        }
+      }
+
+      const { data: missing, error: missErr } = await supabase
+        .from('products')
+        .select('id')
+        .or('image_url.is.null,image_url.eq.');
+      if (missErr) throw new Error(missErr.message);
+
+      let restored = 0;
+      for (const prod of missing ?? []) {
+        const path = found.get(prod.id);
+        if (!path) continue;
+        const { data: { publicUrl } } = bucket.getPublicUrl(path);
+        const { error } = await supabase.from('products').update({ image_url: publicUrl }).eq('id', prod.id);
+        if (!error) restored++;
+      }
+
+      setRestoreResult({
+        restored,
+        stillMissing: (missing?.length ?? 0) - restored,
+        filesSeen: found.size,
+      });
+      if (restored > 0) loadTab('products');
+    } catch (e) {
+      setRestoreResult({ error: (e as Error).message });
+    }
+    setRestoring(false);
   };
 
   const openProductImageEditor = (product: Product) => {
@@ -677,6 +734,37 @@ export default function AdminDashboardPage() {
                   <p className="text-sm text-gray-500 mb-4">
                     Upload or set a photo for each product. Clothing items are managed separately — only grocery products are auto-filled.
                   </p>
+
+                  {/* Recover photos an earlier sync cleared */}
+                  <div className="mb-5 p-4 bg-tpl-warm border border-tpl-dark/10 rounded-xl">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div>
+                        <p className="font-semibold text-tpl-dark text-sm">Restore photos from storage</p>
+                        <p className="text-xs text-gray-600 mt-0.5 max-w-xl">
+                          An earlier version of the Square sync cleared photos for items Square has no
+                          picture for. The image files are still in storage — this puts them back on any
+                          product that currently has none. Existing photos are left alone.
+                        </p>
+                      </div>
+                      <button
+                        onClick={restorePhotosFromStorage}
+                        disabled={restoring}
+                        className="shrink-0 px-4 py-2 bg-tpl-dark text-white text-xs font-semibold rounded-lg hover:bg-tpl-forest transition-colors disabled:opacity-50"
+                      >
+                        {restoring ? 'Restoring…' : 'Restore photos'}
+                      </button>
+                    </div>
+                    {restoreResult && (
+                      <p className={`text-xs mt-3 ${'error' in restoreResult ? 'text-red-700' : 'text-tpl-forest'}`}>
+                        {'error' in restoreResult
+                          ? `Couldn't restore: ${restoreResult.error}`
+                          : `Restored ${restoreResult.restored} photo${restoreResult.restored === 1 ? '' : 's'} from ${restoreResult.filesSeen} file${restoreResult.filesSeen === 1 ? '' : 's'} in storage.` +
+                            (restoreResult.stillMissing > 0
+                              ? ` ${restoreResult.stillMissing} product${restoreResult.stillMissing === 1 ? ' has' : 's have'} no stored photo — use the tools below for those.`
+                              : '')}
+                      </p>
+                    )}
+                  </div>
 
                   {/* Upload Local Rice Photos to Storage */}
                   {products.some(p => p.image_url?.startsWith('/images/')) && (
