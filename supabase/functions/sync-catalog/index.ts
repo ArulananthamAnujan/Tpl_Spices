@@ -144,7 +144,6 @@ Deno.serve(async (req: Request) => {
         return {
           square_item_id: item.id,
           name: itemData.name ?? "Unknown",
-          description: itemData.description ?? null,
           category_id: categorySquareId ? (catMap[categorySquareId] ?? null) : null,
           image_url: imageId ? (imageMap[imageId] ?? null) : null,
           active: !item.is_deleted,
