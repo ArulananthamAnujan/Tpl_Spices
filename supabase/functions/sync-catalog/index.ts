@@ -134,18 +134,19 @@ Deno.serve(async (req: Request) => {
     const catMap: Record<string, string> = {};
     for (const c of dbCats ?? []) catMap[c.square_id] = c.id;
 
-    // Upsert products
+    // Upsert products. image_url is intentionally left out here — Square often has
+    // no photo for an item, and writing null would wipe out a manually uploaded or
+    // AI-generated photo already saved on the product. Images with a Square photo
+    // are updated separately below.
     let prodCount = 0;
     if (squareItems.length > 0) {
       const prods = squareItems.map(item => {
         const itemData = item.item_data ?? {};
         const categorySquareId = itemData.category_id ?? itemData.categories?.[0]?.id ?? null;
-        const imageId = item.image_ids?.[0] ?? itemData.image_ids?.[0] ?? null;
         return {
           square_item_id: item.id,
           name: itemData.name ?? "Unknown",
           category_id: categorySquareId ? (catMap[categorySquareId] ?? null) : null,
-          image_url: imageId ? (imageMap[imageId] ?? null) : null,
           active: !item.is_deleted,
         };
       });
@@ -154,6 +155,23 @@ Deno.serve(async (req: Request) => {
         .upsert(prods, { onConflict: "square_item_id" });
       if (error) throw new Error("products upsert: " + error.message);
       prodCount = prods.length;
+    }
+
+    // Only overwrite image_url for items where Square actually has a photo.
+    const imageUpdates = squareItems
+      .map(item => {
+        const itemData = item.item_data ?? {};
+        const imageId = item.image_ids?.[0] ?? itemData.image_ids?.[0] ?? null;
+        const imageUrl = imageId ? imageMap[imageId] : null;
+        return imageUrl ? { square_item_id: item.id, image_url: imageUrl } : null;
+      })
+      .filter(Boolean) as { square_item_id: string; image_url: string }[];
+
+    if (imageUpdates.length > 0) {
+      const { error } = await supabaseAdmin
+        .from("products")
+        .upsert(imageUpdates, { onConflict: "square_item_id" });
+      if (error) throw new Error("product images upsert: " + error.message);
     }
 
     const { data: dbProds } = await supabaseAdmin.from("products").select("id, square_item_id");
