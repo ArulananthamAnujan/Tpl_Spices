@@ -268,7 +268,6 @@ export default function AdminDashboardPage() {
   };
 
   const syncCatalog = async () => {
-    if (!squareToken.trim()) { setSyncMessage('Error: Please enter your Square Access Token.'); return; }
     setSyncLoading(true); setSyncMessage(''); setTestResult(null);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -278,7 +277,7 @@ export default function AdminDashboardPage() {
           Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ square_token: squareToken.trim(), square_env: squareEnv }),
+        body: JSON.stringify({ square_token: squareToken.trim() || undefined, square_env: squareEnv }),
       });
       const body = await res.json();
       if (!res.ok || body.error) { setSyncMessage('Error: ' + (body.error || 'sync failed')); }
@@ -290,7 +289,6 @@ export default function AdminDashboardPage() {
   };
 
   const testConnection = async () => {
-    if (!squareToken.trim()) { setTestResult({ error: 'Please enter a token first.' }); return; }
     setTestLoading(true); setTestResult(null); setSyncMessage('');
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -300,7 +298,7 @@ export default function AdminDashboardPage() {
           Authorization: `Bearer ${session?.access_token ?? import.meta.env.VITE_SUPABASE_ANON_KEY}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ square_token: squareToken.trim(), square_env: squareEnv, debug: true }),
+        body: JSON.stringify({ square_token: squareToken.trim() || undefined, square_env: squareEnv, debug: true }),
       });
       const body = await res.json();
       setTestResult(body);
@@ -976,17 +974,17 @@ export default function AdminDashboardPage() {
 
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                      Square {squareEnv === 'production' ? 'Production' : 'Sandbox'} Access Token
+                      Square {squareEnv === 'production' ? 'Production' : 'Sandbox'} Access Token (optional)
                     </label>
                     <input
                       type="password"
                       value={squareToken}
                       onChange={e => { setSquareToken(e.target.value); setTestResult(null); setSyncMessage(''); }}
-                      placeholder={squareEnv === 'production' ? 'EAAA... (production token)' : 'EAAAl... (sandbox token)'}
+                      placeholder={squareEnv === 'production' ? 'Leave blank to use the SQUARE_ACCESS_TOKEN secret already stored in Supabase' : 'EAAAl... (sandbox token)'}
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-tpl-lime"
                     />
                     <p className="text-xs text-gray-400 mt-1">
-                      Square Developer Dashboard → your app → {squareEnv === 'production' ? 'Production' : 'Sandbox'} → Access Token
+                      Only needed if you haven't set the SQUARE_ACCESS_TOKEN secret on the sync-catalog edge function in Supabase. Otherwise leave blank — it will be used automatically.
                     </p>
                   </div>
                 </div>
