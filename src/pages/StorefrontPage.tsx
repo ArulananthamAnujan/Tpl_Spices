@@ -9,7 +9,7 @@ import PromoCarousel from '../components/PromoCarousel';
 
 type Section = 'grocery' | 'clothing';
 
-const FEATURE_STRIP_BG = 'https://mzsodhucpwqmtajkvnol.supabase.co/storage/v1/object/public/product-images/ChatGPT%20Image%20Sep%2013,%202026,%2008_11_34%20PM.png';
+const FEATURE_STRIP_BG = '/images/spices-feature-strip-bg.png';
 
 export default function StorefrontPage() {
   const navigate = useNavigate();
