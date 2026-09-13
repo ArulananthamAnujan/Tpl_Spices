@@ -170,8 +170,11 @@ export default function StorefrontPage() {
 
       {/* Trust / feature strip */}
       <div
-        className="relative text-white bg-tpl-forest bg-cover bg-center"
-        style={{ backgroundImage: `linear-gradient(90deg, rgba(20,38,26,0.92) 0%, rgba(20,38,26,0.75) 55%, rgba(20,38,26,0.55) 100%), url('${FEATURE_STRIP_BG}')` }}
+        className="relative text-white bg-tpl-forest bg-cover"
+        style={{
+          backgroundImage: `linear-gradient(90deg, rgba(20,38,26,0.85) 0%, rgba(20,38,26,0.6) 55%, rgba(20,38,26,0.3) 100%), url('${FEATURE_STRIP_BG}')`,
+          backgroundPosition: '65% 55%',
+        }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-2 md:grid-cols-4 divide-x divide-white/10">
           {[
