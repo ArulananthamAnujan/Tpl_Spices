@@ -59,6 +59,22 @@ const REASON_LABEL: Record<string, string> = {
   initial: 'Opening balance',
 };
 
+// Supabase caps a single response at its configured max row count. Page
+// through with .range() until a short page comes back so large catalogues
+// (1000+ products) load in full instead of being silently truncated.
+async function fetchAllRows<T>(buildQuery: () => any): Promise<T[]> {
+  const pageSize = 1000;
+  const all: T[] = [];
+  let from = 0;
+  while (true) {
+    const { data } = await buildQuery().range(from, from + pageSize - 1);
+    all.push(...((data as T[]) ?? []));
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 const EMPTY_SLIDE: Partial<PromoSlide> = {
   title: '',
   subtitle: '',
@@ -170,16 +186,20 @@ export default function AdminDashboardPage() {
       const { data } = await supabase.from('categories').select('*').order('sort_order');
       setAllCategories(data ?? []);
     } else if (t === 'products') {
-      const { data } = await supabase.from('products').select('*, category:categories(name, section)').eq('active', true).order('name');
-      setProducts(data ?? []);
+      const data = await fetchAllRows<Product>(() =>
+        supabase.from('products').select('*, category:categories(name, section)').eq('active', true).order('name')
+      );
+      setProducts(data);
     } else if (t === 'inventory') {
-      const [storesRes, productsRes] = await Promise.all([
+      const [storesRes, productsData] = await Promise.all([
         stores.length ? Promise.resolve({ data: stores }) : supabase.from('stores').select('*').order('name'),
-        supabase.from('products').select('*, category:categories(name), variations:product_variations(*)').eq('active', true).order('name'),
+        fetchAllRows<Product>(() =>
+          supabase.from('products').select('*, category:categories(name), variations:product_variations(*)').eq('active', true).order('name')
+        ),
       ]);
       if (!stores.length) setStores((storesRes as any).data ?? []);
       const loadedStores = stores.length ? stores : ((storesRes as any).data ?? []);
-      setInvProducts((productsRes as any).data ?? []);
+      setInvProducts(productsData);
       if (!invStoreId && loadedStores.length > 0) setInvStoreId(loadedStores[0].id);
     }
     setLoading(false);
