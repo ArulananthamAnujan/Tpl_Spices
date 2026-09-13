@@ -3,8 +3,15 @@ import {
   Store as StoreIcon, Users, Package, RefreshCw, Plus, Edit2, Trash2,
   CheckCircle, AlertCircle, Megaphone, Upload, X, ToggleLeft, ToggleRight,
   Image as ImageIcon, Type, Tag, Shirt, Salad, Camera, Search as SearchIcon, Wand2, Loader2, Boxes,
-  History as HistoryIcon, Clock, PackagePlus
+  History as HistoryIcon, Clock, PackagePlus, ChefHat, Flame
 } from 'lucide-react';
+
+const CATEGORY_SECTIONS: { id: Category['section']; label: string; icon: typeof Salad }[] = [
+  { id: 'grocery', label: 'Grocery', icon: Salad },
+  { id: 'kitchen', label: 'Kitchen', icon: ChefHat },
+  { id: 'pooja', label: 'Pooja', icon: Flame },
+  { id: 'clothing', label: 'Clothing', icon: Shirt },
+];
 import { supabase } from '../lib/supabase';
 import { Store, Profile, Order, PromoSlide, Category, Product, formatPrice } from '../lib/types';
 import OrderStatusBadge from '../components/OrderStatusBadge';
@@ -352,9 +359,12 @@ export default function AdminDashboardPage() {
     setStaff(prev => prev.map(s => s.id === staffId ? { ...s, role: role as any, assigned_store_id: storeId } : s));
   };
 
+  // "Grocery" here means the AI photo-generation pipeline (product-style shots)
+  // rather than the clothing/apparel one — kitchen and pooja items go through
+  // the same non-apparel pipeline, they just show under their own nav tab.
   const isGroceryProduct = (product: Product): boolean => {
     const cat = (product as any).category;
-    return !cat || cat.section === 'grocery';
+    return !cat || cat.section !== 'clothing';
   };
 
   // Search Open Food Facts with a term; returns image URL or null
@@ -697,7 +707,7 @@ export default function AdminDashboardPage() {
     setEnhancingProductId(null);
   };
 
-  const updateCategorySection = async (catId: string, section: 'grocery' | 'clothing') => {
+  const updateCategorySection = async (catId: string, section: Category['section']) => {
     setSavingCatId(catId);
     await supabase.from('categories').update({ section }).eq('id', catId);
     setAllCategories(prev => prev.map(c => c.id === catId ? { ...c, section } : c));
@@ -1718,7 +1728,7 @@ export default function AdminDashboardPage() {
                 <div className="bg-white rounded-2xl shadow-card p-6">
                   <h2 className="font-semibold text-tpl-dark text-lg mb-1">Category Sections</h2>
                   <p className="text-sm text-gray-500 mb-6">
-                    Assign each category to <strong>Grocery &amp; Spices</strong> or <strong>Clothing</strong>. This controls which nav section it appears under.
+                    Assign each category to a section — Grocery, Kitchen, Pooja, or Clothing. This controls which nav tab it appears under.
                   </p>
                   {allCategories.length === 0 ? (
                     <div className="text-center py-10">
@@ -1734,28 +1744,20 @@ export default function AdminDashboardPage() {
                             {cat.is_brand && <span className="text-xs text-gray-400">Brand</span>}
                           </div>
                           <div className="flex gap-2 flex-shrink-0">
-                            <button
-                              onClick={() => updateCategorySection(cat.id, 'grocery')}
-                              disabled={savingCatId === cat.id}
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                                cat.section === 'grocery'
-                                  ? 'bg-tpl-forest text-white'
-                                  : 'border border-gray-200 text-gray-500 hover:border-tpl-forest hover:text-tpl-forest'
-                              }`}
-                            >
-                              <Salad className="h-3.5 w-3.5" /> Grocery
-                            </button>
-                            <button
-                              onClick={() => updateCategorySection(cat.id, 'clothing')}
-                              disabled={savingCatId === cat.id}
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                                cat.section === 'clothing'
-                                  ? 'bg-tpl-forest text-white'
-                                  : 'border border-gray-200 text-gray-500 hover:border-tpl-forest hover:text-tpl-forest'
-                              }`}
-                            >
-                              <Shirt className="h-3.5 w-3.5" /> Clothing
-                            </button>
+                            {CATEGORY_SECTIONS.map(s => (
+                              <button
+                                key={s.id}
+                                onClick={() => updateCategorySection(cat.id, s.id)}
+                                disabled={savingCatId === cat.id}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                                  cat.section === s.id
+                                    ? 'bg-tpl-forest text-white'
+                                    : 'border border-gray-200 text-gray-500 hover:border-tpl-forest hover:text-tpl-forest'
+                                }`}
+                              >
+                                <s.icon className="h-3.5 w-3.5" /> {s.label}
+                              </button>
+                            ))}
                           </div>
                         </div>
                       ))}

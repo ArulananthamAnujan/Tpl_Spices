@@ -1,9 +1,16 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { ShoppingCart, Menu, X, ChevronDown, Search, Salad, Shirt } from 'lucide-react';import { useState, useEffect, useRef } from 'react';
+import { ShoppingCart, Menu, X, ChevronDown, Search, Salad, Shirt, ChefHat, Flame } from 'lucide-react';import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useCart } from '../contexts/CartContext';
 import { supabase } from '../lib/supabase';
 import { Category, formatPrice } from '../lib/types';
+
+const NAV_SECTIONS: { id: Category['section']; label: string; icon: typeof Salad }[] = [
+  { id: 'grocery', label: 'Grocery & Spices', icon: Salad },
+  { id: 'kitchen', label: 'Kitchen Essentials', icon: ChefHat },
+  { id: 'pooja', label: 'Pooja Essentials', icon: Flame },
+  { id: 'clothing', label: 'Clothing', icon: Shirt },
+];
 
 export default function Header() {
   const { user, profile, signOut } = useAuth();
@@ -48,8 +55,7 @@ export default function Header() {
   const isActive = (path: string) => location.pathname === path;
 
   const brands = categories.filter(c => c.is_brand);
-  const groceryCategories = categories.filter(c => c.section === 'grocery' && !c.is_brand);
-  const clothingCategories = categories.filter(c => c.section === 'clothing' && !c.is_brand);
+  const categoriesBySection = (section: Category['section']) => categories.filter(c => c.section === section && !c.is_brand);
 
   return (
     <header className="sticky top-0 z-50 shadow-lg">
@@ -169,25 +175,18 @@ export default function Header() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="hidden md:flex items-center h-11 gap-0.5">
 
-            <Link
-              to="/?section=grocery"
-              className={`flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors h-9 ${
-                location.search.includes('section=grocery') ? 'bg-white/20 text-white' : 'text-white/90 hover:text-white hover:bg-white/15'
-              }`}
-            >
-              <Salad className="h-4 w-4 text-tpl-lime" />
-              Grocery &amp; Spices
-            </Link>
-
-            <Link
-              to="/?section=clothing"
-              className={`flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors h-9 ${
-                location.search.includes('section=clothing') ? 'bg-white/20 text-white' : 'text-white/90 hover:text-white hover:bg-white/15'
-              }`}
-            >
-              <Shirt className="h-4 w-4 text-tpl-lime" />
-              Clothing
-            </Link>
+            {NAV_SECTIONS.map(s => (
+              <Link
+                key={s.id}
+                to={`/?section=${s.id}`}
+                className={`flex items-center gap-2 px-3 py-1.5 text-sm font-semibold rounded-lg transition-colors h-9 ${
+                  location.search.includes(`section=${s.id}`) ? 'bg-white/20 text-white' : 'text-white/90 hover:text-white hover:bg-white/15'
+                }`}
+              >
+                <s.icon className="h-4 w-4 text-tpl-lime" />
+                {s.label}
+              </Link>
+            ))}
 
             <div className="w-px h-5 bg-white/20 mx-1" />
 
@@ -242,21 +241,17 @@ export default function Header() {
             </div>
           </form>
           <Link to="/" onClick={() => setMenuOpen(false)} className="block px-3 py-2 text-tpl-pale hover:text-white rounded-lg text-sm font-medium">Home</Link>
-          <Link to="/?section=grocery" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 text-tpl-lime hover:text-white rounded-lg text-sm font-semibold">
-            <Salad className="h-4 w-4" /> Grocery &amp; Spices
-          </Link>
-          <Link to="/?section=clothing" onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 text-tpl-lime hover:text-white rounded-lg text-sm font-semibold">
-            <Shirt className="h-4 w-4" /> Clothing
-          </Link>
-          {groceryCategories.map(cat => (
-            <Link key={cat.id} to={`/?section=grocery&category=${cat.id}`} onClick={() => setMenuOpen(false)} className="block px-6 py-1.5 text-white/70 hover:text-white rounded-lg text-sm">
-              {cat.name}
-            </Link>
-          ))}
-          {clothingCategories.map(cat => (
-            <Link key={cat.id} to={`/?section=clothing&category=${cat.id}`} onClick={() => setMenuOpen(false)} className="block px-6 py-1.5 text-white/70 hover:text-white rounded-lg text-sm">
-              {cat.name}
-            </Link>
+          {NAV_SECTIONS.map(s => (
+            <div key={s.id}>
+              <Link to={`/?section=${s.id}`} onClick={() => setMenuOpen(false)} className="flex items-center gap-2 px-3 py-2 text-tpl-lime hover:text-white rounded-lg text-sm font-semibold">
+                <s.icon className="h-4 w-4" /> {s.label}
+              </Link>
+              {categoriesBySection(s.id).map(cat => (
+                <Link key={cat.id} to={`/?section=${s.id}&category=${cat.id}`} onClick={() => setMenuOpen(false)} className="block px-6 py-1.5 text-white/70 hover:text-white rounded-lg text-sm">
+                  {cat.name}
+                </Link>
+              ))}
+            </div>
           ))}
           <Link to="/?promo=1" onClick={() => setMenuOpen(false)} className="block px-3 py-2 text-white/80 hover:text-white rounded-lg text-sm">Promotions</Link>
           <Link to="/about" onClick={() => setMenuOpen(false)} className="block px-3 py-2 text-white/80 hover:text-white rounded-lg text-sm">About</Link>

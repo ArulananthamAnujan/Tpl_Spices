@@ -1,13 +1,20 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, SlidersHorizontal, X, Salad, Shirt, Truck, ShieldCheck, Leaf, Store as StoreIcon } from 'lucide-react';
+import { Search, SlidersHorizontal, X, Salad, Shirt, Truck, ShieldCheck, Leaf, Store as StoreIcon, ChefHat, Flame } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Store, Category, Product } from '../lib/types';
 import ProductCard from '../components/ProductCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 import PromoCarousel from '../components/PromoCarousel';
 
-type Section = 'grocery' | 'clothing';
+type Section = 'grocery' | 'clothing' | 'kitchen' | 'pooja';
+
+const SECTIONS: { id: Section; label: string; icon: typeof Salad }[] = [
+  { id: 'grocery', label: 'Grocery & Spices', icon: Salad },
+  { id: 'kitchen', label: 'Kitchen Essentials', icon: ChefHat },
+  { id: 'pooja', label: 'Pooja Essentials', icon: Flame },
+  { id: 'clothing', label: 'Clothing', icon: Shirt },
+];
 
 const FEATURE_STRIP_BG = '/images/spices-feature-strip-bg.png';
 
@@ -31,7 +38,7 @@ export default function StorefrontPage() {
     const sec = searchParams.get('section') as Section | null;
     const search = searchParams.get('search');
 
-    if (sec === 'grocery' || sec === 'clothing') setSection(sec);
+    if (sec && SECTIONS.some(s => s.id === sec)) setSection(sec);
     setSelectedCategory(cat ?? null);
     if (search) setSearchQuery(search);
   }, [searchParams]);
@@ -162,7 +169,8 @@ export default function StorefrontPage() {
   const sidebarCategories = categories.filter(c => c.section === section && !c.is_brand);
   const brandCategories = categories.filter(c => c.is_brand);
 
-  const sectionLabel = section === 'grocery' ? 'Grocery & Spices' : 'Clothing';
+  const sectionLabel = SECTIONS.find(s => s.id === section)?.label ?? 'Products';
+  const SectionIcon = SECTIONS.find(s => s.id === section)?.icon ?? Salad;
 
   return (
     <div className="min-h-screen bg-tpl-cream">
@@ -236,29 +244,21 @@ export default function StorefrontPage() {
       {/* Section Tabs */}
       <div className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-1 py-2">
-            <button
-              onClick={() => switchSection('grocery')}
-              className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                section === 'grocery'
-                  ? 'bg-tpl-forest text-white shadow-sm'
-                  : 'text-gray-500 hover:text-tpl-forest hover:bg-tpl-cream'
-              }`}
-            >
-              <Salad className="h-4 w-4" />
-              Grocery &amp; Spices
-            </button>
-            <button
-              onClick={() => switchSection('clothing')}
-              className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                section === 'clothing'
-                  ? 'bg-tpl-forest text-white shadow-sm'
-                  : 'text-gray-500 hover:text-tpl-forest hover:bg-tpl-cream'
-              }`}
-            >
-              <Shirt className="h-4 w-4" />
-              Clothing
-            </button>
+          <div className="flex items-center gap-1 py-2 overflow-x-auto">
+            {SECTIONS.map(s => (
+              <button
+                key={s.id}
+                onClick={() => switchSection(s.id)}
+                className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all flex-shrink-0 ${
+                  section === s.id
+                    ? 'bg-tpl-forest text-white shadow-sm'
+                    : 'text-gray-500 hover:text-tpl-forest hover:bg-tpl-cream'
+                }`}
+              >
+                <s.icon className="h-4 w-4" />
+                {s.label}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -294,9 +294,7 @@ export default function StorefrontPage() {
           <aside className={`w-52 flex-shrink-0 ${showMobileFilters ? 'block' : 'hidden'} md:block`}>
             <div className="bg-white rounded-2xl shadow-card p-4 sticky top-28">
               <div className="flex items-center gap-2 mb-3">
-                {section === 'grocery'
-                  ? <Salad className="h-4 w-4 text-tpl-forest" />
-                  : <Shirt className="h-4 w-4 text-tpl-forest" />}
+                <SectionIcon className="h-4 w-4 text-tpl-forest" />
                 <h3 className="font-semibold text-tpl-dark text-sm">{sectionLabel}</h3>
               </div>
               <button
@@ -354,9 +352,7 @@ export default function StorefrontPage() {
               </div>
             ) : products.length === 0 ? (
               <div className="bg-white rounded-2xl shadow-card p-12 text-center">
-                {section === 'grocery'
-                  ? <Salad className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-                  : <Shirt className="h-12 w-12 text-gray-300 mx-auto mb-4" />}
+                <SectionIcon className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                 <h3 className="text-lg font-semibold text-gray-700 mb-2">No products found</h3>
                 <p className="text-sm text-gray-500">
                   {searchQuery

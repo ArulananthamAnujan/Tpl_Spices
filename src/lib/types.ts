@@ -31,7 +31,7 @@ export interface Category {
   name: string;
   sort_order: number;
   is_brand: boolean;
-  section: 'grocery' | 'clothing';
+  section: 'grocery' | 'clothing' | 'kitchen' | 'pooja';
 }
 
 export interface PromoSlide {
