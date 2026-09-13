@@ -242,7 +242,7 @@ export default function StorefrontPage() {
       )}
 
       {/* Section Tabs */}
-      <div className="bg-white border-b border-gray-100 shadow-sm">
+      <div id="products-section" className="bg-white border-b border-gray-100 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-1 py-2 overflow-x-auto">
             {SECTIONS.map(s => (
