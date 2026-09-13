@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CreditCard, MapPin, Clock, Truck, Store, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
+import { CreditCard, MapPin, Clock, Truck, Store as StoreIcon, CheckCircle, AlertCircle, ArrowLeft } from 'lucide-react';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { FulfillmentType, DeliveryAddress, formatPrice } from '../lib/types';
+import { FulfillmentType, DeliveryAddress, formatPrice, Store } from '../lib/types';
 import { effectiveUnitCents } from '../lib/pricing';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -34,10 +34,11 @@ function loadSquareSdk(): Promise<any> {
 }
 
 export default function CheckoutPage() {
-  const { items, store, totalCents, clearCart } = useCart();
+  const { items, store, selectStore, totalCents, clearCart } = useCart();
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  const [stores, setStores] = useState<Store[]>([]);
   const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>('PICKUP');
   const [deliveryAddress, setDeliveryAddress] = useState<DeliveryAddress>({ street: '', suburb: '', state: 'VIC', postcode: '' });
   const [scheduledTime, setScheduledTime] = useState('');
@@ -57,6 +58,12 @@ export default function CheckoutPage() {
     if (items.length === 0) { navigate('/cart'); return; }
     if (!user) { navigate('/auth'); return; }
   }, [items, user]);
+
+  useEffect(() => {
+    supabase.from('stores').select('*').order('name').then(({ data }) => {
+      setStores(data ?? []);
+    });
+  }, []);
 
   useEffect(() => {
     if (!store || !items.length) return;
@@ -174,6 +181,28 @@ export default function CheckoutPage() {
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-5">
+              {/* Pickup Location */}
+              {stores.length > 1 && (
+                <div className="bg-white rounded-2xl shadow-card p-6">
+                  <h2 className="font-semibold text-tpl-dark mb-4 flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-tpl-forest" /> Pickup Location
+                  </h2>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {stores.map(s => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => selectStore(s)}
+                        className={`p-4 rounded-xl border-2 text-left transition-all ${store?.id === s.id ? 'border-tpl-forest bg-tpl-pale/50' : 'border-gray-200 hover:border-tpl-mid'}`}
+                      >
+                        <p className="font-semibold text-sm text-tpl-dark">{s.name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{s.address}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Fulfillment */}
               <div className="bg-white rounded-2xl shadow-card p-6">
                 <h2 className="font-semibold text-tpl-dark mb-4">Fulfillment Method</h2>
@@ -184,7 +213,7 @@ export default function CheckoutPage() {
                       onClick={() => setFulfillmentType('PICKUP')}
                       className={`p-4 rounded-xl border-2 text-left transition-all ${fulfillmentType === 'PICKUP' ? 'border-tpl-forest bg-tpl-pale/50' : 'border-gray-200 hover:border-tpl-mid'}`}
                     >
-                      <Store className={`h-5 w-5 mb-2 ${fulfillmentType === 'PICKUP' ? 'text-tpl-forest' : 'text-gray-400'}`} />
+                      <StoreIcon className={`h-5 w-5 mb-2 ${fulfillmentType === 'PICKUP' ? 'text-tpl-forest' : 'text-gray-400'}`} />
                       <p className="font-semibold text-sm text-tpl-dark">Pickup</p>
                       <p className="text-xs text-gray-500 mt-0.5">Collect in store</p>
                     </button>

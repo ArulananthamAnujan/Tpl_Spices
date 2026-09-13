@@ -6,6 +6,7 @@ interface CartContextType {
   items: CartItem[];
   store: Store | null;
   addItem: (item: CartItem, store: Store) => void;
+  selectStore: (store: Store) => void;
   removeItem: (variationId: string) => void;
   updateQty: (variationId: string, qty: number) => void;
   clearCart: () => void;
@@ -36,6 +37,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     });
   }, [store]);
 
+  const selectStore = useCallback((s: Store) => {
+    setStore(s);
+  }, []);
+
   const removeItem = useCallback((variationId: string) => {
     setItems(prev => {
       const next = prev.filter(i => i.variation_id !== variationId);
@@ -61,7 +66,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const itemCount = items.reduce((sum, i) => sum + i.quantity, 0);
 
   return (
-    <CartContext.Provider value={{ items, store, addItem, removeItem, updateQty, clearCart, totalCents, itemCount }}>
+    <CartContext.Provider value={{ items, store, addItem, selectStore, removeItem, updateQty, clearCart, totalCents, itemCount }}>
       {children}
     </CartContext.Provider>
   );

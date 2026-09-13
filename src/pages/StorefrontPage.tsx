@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, ChevronDown, MapPin, Loader2, SlidersHorizontal, X, Salad, Shirt, Truck, ShieldCheck, Leaf, Store as StoreIcon } from 'lucide-react';
+import { Search, SlidersHorizontal, X, Salad, Shirt, Truck, ShieldCheck, Leaf, Store as StoreIcon } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Store, Category, Product } from '../lib/types';
 import ProductCard from '../components/ProductCard';
@@ -12,7 +12,6 @@ type Section = 'grocery' | 'clothing';
 export default function StorefrontPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [stores, setStores] = useState<Store[]>([]);
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -20,9 +19,7 @@ export default function StorefrontPage() {
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [section, setSection] = useState<Section>('grocery');
-  const [loadingStores, setLoadingStores] = useState(true);
   const [loadingProducts, setLoadingProducts] = useState(false);
-  const [storeDropOpen, setStoreDropOpen] = useState(false);
   const [showMobileFilters, setShowMobileFilters] = useState(false);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
 
@@ -38,10 +35,10 @@ export default function StorefrontPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    supabase.from('stores').select('*').order('name').then(({ data }) => {
-      setStores(data ?? []);
+    // Default to the first store behind the scenes for stock lookups and cart
+    // association — customers pick their pickup location later, at checkout.
+    supabase.from('stores').select('*').order('name').limit(1).then(({ data }) => {
       if (data && data.length > 0) setSelectedStore(data[0]);
-      setLoadingStores(false);
     });
     supabase.from('categories').select('*').order('sort_order').then(({ data }) => {
       setCategories(data ?? []);
@@ -185,48 +182,6 @@ export default function StorefrontPage() {
               </div>
             </div>
           ))}
-        </div>
-      </div>
-
-      {/* Store Selector */}
-      <div className="bg-white border-b border-gray-100 py-2 px-4">
-        <div className="max-w-7xl mx-auto">
-          {loadingStores ? (
-            <div className="flex items-center gap-2 py-1">
-              <Loader2 className="h-4 w-4 animate-spin text-tpl-lime" />
-              <span className="text-sm text-gray-500">Loading stores…</span>
-            </div>
-          ) : (
-            <div className="relative inline-block">
-              <button
-                onClick={() => setStoreDropOpen(v => !v)}
-                className="flex items-center gap-2 text-sm text-gray-700 hover:text-tpl-forest transition-colors py-1"
-              >
-                <MapPin className="h-4 w-4 text-tpl-lime flex-shrink-0" />
-                <span className="font-medium">{selectedStore?.name ?? 'Select a store'}</span>
-                {selectedStore && <span className="text-gray-400 text-xs hidden sm:inline">· {selectedStore.address}</span>}
-                <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${storeDropOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {storeDropOpen && (
-                <div className="absolute top-full mt-1 left-0 bg-white rounded-2xl shadow-card-hover border border-gray-100 z-30 overflow-hidden min-w-[280px]">
-                  {stores.map(store => (
-                    <button
-                      key={store.id}
-                      onClick={() => { setSelectedStore(store); setStoreDropOpen(false); }}
-                      className={`w-full text-left px-4 py-3 text-sm hover:bg-tpl-cream transition-colors border-b last:border-b-0 border-gray-50 ${selectedStore?.id === store.id ? 'bg-tpl-pale/40' : ''}`}
-                    >
-                      <p className="font-semibold text-tpl-forest">{store.name}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">{store.address}</p>
-                      <div className="flex gap-2 mt-1">
-                        {store.pickup_enabled && <span className="text-xs bg-tpl-pale text-tpl-forest px-1.5 py-0.5 rounded">Pickup</span>}
-                        {store.delivery_enabled && <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Delivery</span>}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
