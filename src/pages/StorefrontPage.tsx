@@ -9,6 +9,8 @@ import PromoCarousel from '../components/PromoCarousel';
 
 type Section = 'grocery' | 'clothing';
 
+const FEATURE_STRIP_BG = 'https://mzsodhucpwqmtajkvnol.supabase.co/storage/v1/object/public/product-images/ChatGPT%20Image%20Sep%2013,%202026,%2008_11_34%20PM.png';
+
 export default function StorefrontPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -158,6 +160,7 @@ export default function StorefrontPage() {
   };
 
   const sidebarCategories = categories.filter(c => c.section === section && !c.is_brand);
+  const brandCategories = categories.filter(c => c.is_brand);
 
   const sectionLabel = section === 'grocery' ? 'Grocery & Spices' : 'Clothing';
 
@@ -166,7 +169,10 @@ export default function StorefrontPage() {
       <PromoCarousel />
 
       {/* Trust / feature strip */}
-      <div className="bg-tpl-forest text-white">
+      <div
+        className="relative text-white bg-tpl-forest bg-cover bg-center"
+        style={{ backgroundImage: `linear-gradient(90deg, rgba(20,38,26,0.92) 0%, rgba(20,38,26,0.75) 55%, rgba(20,38,26,0.55) 100%), url('${FEATURE_STRIP_BG}')` }}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-2 md:grid-cols-4 divide-x divide-white/10">
           {[
             { icon: Leaf, title: 'Fresh & Authentic', sub: 'Quality spices & groceries' },
@@ -184,6 +190,45 @@ export default function StorefrontPage() {
           ))}
         </div>
       </div>
+
+      {/* Our Group Brands */}
+      {brandCategories.length > 0 && (
+        <div className="bg-tpl-dark">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="flex flex-col lg:flex-row lg:items-center gap-6 lg:gap-10 divide-y lg:divide-y-0 lg:divide-x divide-white/10">
+              <div className="lg:pr-10 flex-shrink-0">
+                <p className="text-tpl-lime text-xs font-semibold uppercase tracking-widest mb-1">Our Group Brands</p>
+                <p className="text-white font-display text-xl font-bold leading-snug">
+                  Names you know.<br />Quality you come home to.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-6 pt-6 lg:pt-0 lg:pl-10 flex-1">
+                {brandCategories.map(brand => (
+                  <button
+                    key={brand.id}
+                    onClick={() => {
+                      setSection(brand.section);
+                      setSelectedCategory(brand.id);
+                      setSearchParams(prev => {
+                        const p = new URLSearchParams(prev);
+                        p.set('section', brand.section);
+                        p.set('category', brand.id);
+                        return p;
+                      });
+                    }}
+                    className="text-left group"
+                  >
+                    <p className="text-white font-semibold group-hover:text-tpl-lime transition-colors truncate">{brand.name}</p>
+                    <span className="text-tpl-pale/70 group-hover:text-tpl-lime text-xs font-medium inline-flex items-center gap-1 mt-1">
+                      Explore {brand.name} →
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Section Tabs */}
       <div className="bg-white border-b border-gray-100 shadow-sm">
