@@ -72,12 +72,15 @@ export default function CheckoutPage() {
       setCardError(`Payments aren't configured yet — set VITE_SQUARE_APP_ID (currently running in ${SQUARE_ENV} mode).`);
       return;
     }
+    let cancelled = false;
+    setSquareReady(false);
     const init = async () => {
       try {
         const SquareSdk = await loadSquareSdk();
         const payments = SquareSdk.payments(appId, store.square_location_id);
         paymentsRef.current = payments;
         const card = await payments.card();
+        if (cancelled) { await card.destroy(); return; }
         await card.attach('#card-container');
         cardRef.current = card;
         setSquareReady(true);
@@ -86,6 +89,12 @@ export default function CheckoutPage() {
       }
     };
     init();
+    return () => {
+      cancelled = true;
+      const existingCard = cardRef.current;
+      cardRef.current = null;
+      if (existingCard) existingCard.destroy().catch(() => {});
+    };
   }, [store]);
 
   useEffect(() => {
