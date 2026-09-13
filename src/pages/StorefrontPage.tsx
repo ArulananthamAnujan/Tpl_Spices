@@ -16,8 +16,6 @@ const SECTIONS: { id: Section; label: string; icon: typeof Salad }[] = [
   { id: 'clothing', label: 'Clothing', icon: Shirt },
 ];
 
-const FEATURE_STRIP_BG = '/images/spices-feature-strip-bg.png';
-
 export default function StorefrontPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -177,25 +175,23 @@ export default function StorefrontPage() {
       <PromoCarousel />
 
       {/* Trust / feature strip */}
-      <div
-        className="relative text-white bg-tpl-forest bg-cover"
-        style={{
-          backgroundImage: `linear-gradient(90deg, rgba(20,38,26,0.85) 0%, rgba(20,38,26,0.6) 55%, rgba(20,38,26,0.3) 100%), url('${FEATURE_STRIP_BG}')`,
-          backgroundPosition: '65% 55%',
-        }}
-      >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-2 md:grid-cols-4 divide-x divide-white/10">
+      <div className="relative text-white bg-tpl-dark overflow-hidden">
+        <div className="absolute top-0 left-1/4 -translate-x-1/2 w-64 h-32 bg-tpl-gold/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 right-1/4 translate-x-1/2 w-64 h-32 bg-tpl-lime/5 rounded-full blur-3xl" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative grid grid-cols-2 md:grid-cols-4 divide-x divide-tpl-gold/15">
           {[
             { icon: Leaf, title: 'Fresh & Authentic', sub: 'Quality spices & groceries' },
             { icon: Truck, title: 'Delivery & Pickup', sub: 'Fast, flexible fulfilment' },
             { icon: ShieldCheck, title: 'Secure Checkout', sub: 'Safe, encrypted payments' },
             { icon: StoreIcon, title: 'Local Stores', sub: 'Serving your community' },
           ].map(f => (
-            <div key={f.title} className="flex items-center gap-3 px-3 py-3.5">
-              <f.icon className="h-5 w-5 text-tpl-lime flex-shrink-0" />
+            <div key={f.title} className="flex items-center gap-3 px-4 py-4">
+              <div className="w-9 h-9 rounded-full bg-tpl-gold/10 border border-tpl-gold/20 flex items-center justify-center flex-shrink-0">
+                <f.icon className="h-4 w-4 text-tpl-gold-light" />
+              </div>
               <div className="min-w-0">
                 <p className="text-xs sm:text-sm font-semibold leading-tight truncate">{f.title}</p>
-                <p className="text-[11px] text-tpl-pale/70 leading-tight truncate hidden sm:block">{f.sub}</p>
+                <p className="text-[11px] text-tpl-pale/60 leading-tight truncate hidden sm:block">{f.sub}</p>
               </div>
             </div>
           ))}
