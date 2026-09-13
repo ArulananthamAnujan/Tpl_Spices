@@ -66,26 +66,28 @@ export default function PromoCarousel() {
   if (slides.length === 0) {
     return (
       <div
-        className="bg-tpl-forest bg-cover py-20 px-4 flex items-center justify-center"
+        className="bg-tpl-forest bg-cover py-20 px-4"
         style={{
-          backgroundImage: `linear-gradient(rgba(15,26,10,0.75), rgba(15,26,10,0.75)), url('/images/spices-feature-strip-bg.png')`,
+          backgroundImage: `linear-gradient(90deg, rgba(15,26,10,0.92) 0%, rgba(15,26,10,0.75) 45%, rgba(15,26,10,0.25) 75%), url('/images/spices-feature-strip-bg.png')`,
           backgroundPosition: '60% 45%',
         }}
       >
-        <div className="text-center">
-          <h1 className="font-display text-3xl sm:text-4xl text-white font-bold leading-tight">
-            Authentic Sri Lankan<br />
-            <span className="text-tpl-lime">&amp; Indian Groceries</span>
-          </h1>
-          <p className="text-tpl-pale/80 mt-3 text-sm sm:text-base">
-            Fresh spices, pantry essentials &amp; more — delivered or ready for pickup.
-          </p>
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 mt-6 px-6 py-3 bg-tpl-lime text-tpl-dark font-semibold rounded-xl hover:bg-tpl-light transition-colors"
-          >
-            Shop Now <ArrowRight className="h-4 w-4" />
-          </Link>
+        <div className="max-w-7xl mx-auto">
+          <div className="max-w-xl">
+            <h1 className="font-display text-3xl sm:text-4xl text-white font-bold leading-tight">
+              Authentic Sri Lankan<br />
+              <span className="text-tpl-lime">&amp; Indian Groceries</span>
+            </h1>
+            <p className="text-tpl-pale/80 mt-3 text-sm sm:text-base">
+              Fresh spices, pantry essentials &amp; more — delivered or ready for pickup.
+            </p>
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 mt-6 px-6 py-3 bg-tpl-lime text-tpl-dark font-semibold rounded-xl hover:bg-tpl-light transition-colors"
+            >
+              Shop Now <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
       </div>
     );
