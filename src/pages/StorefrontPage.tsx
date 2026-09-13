@@ -38,6 +38,7 @@ export default function StorefrontPage() {
 
     if (sec && SECTIONS.some(s => s.id === sec)) setSection(sec);
     setSelectedCategory(cat ?? null);
+    setSelectedBrand(null);
     if (search) setSearchQuery(search);
   }, [searchParams]);
 
@@ -141,18 +142,6 @@ export default function StorefrontPage() {
       });
   }, [selectedStore, products]);
 
-  const switchSection = (s: Section) => {
-    setSection(s);
-    setSelectedCategory(null);
-    setSelectedBrand(null);
-    setSearchParams(prev => {
-      const p = new URLSearchParams(prev);
-      p.set('section', s);
-      p.delete('category');
-      return p;
-    });
-  };
-
   const selectCategory = (catId: string | null) => {
     setSelectedCategory(catId);
     setSearchParams(prev => {
@@ -237,29 +226,7 @@ export default function StorefrontPage() {
         </div>
       )}
 
-      {/* Section Tabs */}
-      <div id="products-section" className="bg-white border-b border-gray-100 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-1 py-2 overflow-x-auto">
-            {SECTIONS.map(s => (
-              <button
-                key={s.id}
-                onClick={() => switchSection(s.id)}
-                className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all flex-shrink-0 ${
-                  section === s.id
-                    ? 'bg-tpl-forest text-white shadow-sm'
-                    : 'text-gray-500 hover:text-tpl-forest hover:bg-tpl-cream'
-                }`}
-              >
-                <s.icon className="h-4 w-4" />
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div id="products-section" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Search + Filter */}
         <div className="flex items-center gap-3 mb-6">
           <div className="relative flex-1">
