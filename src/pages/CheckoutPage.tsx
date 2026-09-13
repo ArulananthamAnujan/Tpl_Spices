@@ -61,9 +61,10 @@ export default function CheckoutPage() {
   const paymentLocationId = stores.find(s => s.is_payment_location)?.square_location_id ?? store?.square_location_id;
 
   useEffect(() => {
+    if (orderId) return; // order already placed — stay on the confirmation screen
     if (items.length === 0) { navigate('/cart'); return; }
     if (!user) { navigate('/auth'); return; }
-  }, [items, user]);
+  }, [items, user, orderId]);
 
   useEffect(() => {
     supabase.from('stores').select('*').order('name').then(({ data }) => {
