@@ -50,43 +50,62 @@ export default function StorefrontPage() {
 
   const fetchProducts = useCallback(async () => {
     setLoadingProducts(true);
-    let query = supabase
-      .from('products')
-      .select('*, category:categories(*), variations:product_variations(*)')
-      .eq('active', true)
-      .order('name');
 
-    if (selectedCategory) {
-      query = query.eq('category_id', selectedCategory);
-    } else {
-      const sectionCatIds = categories
-        .filter(c => c.section === section)
-        .map(c => c.id);
-      if (section === 'grocery') {
-        // Grocery: all products in grocery categories OR with no category
-        if (sectionCatIds.length > 0) {
-          query = query.or(`category_id.in.(${sectionCatIds.join(',')}),category_id.is.null`);
-        } else {
-          query = query.is('category_id', null);
-        }
+    const buildQuery = () => {
+      let query = supabase
+        .from('products')
+        .select('*, category:categories(*), variations:product_variations(*)')
+        .eq('active', true)
+        .order('name');
+
+      if (selectedCategory) {
+        query = query.eq('category_id', selectedCategory);
       } else {
-        // Clothing: only products explicitly in clothing categories
-        if (sectionCatIds.length > 0) {
-          query = query.in('category_id', sectionCatIds);
+        const sectionCatIds = categories
+          .filter(c => c.section === section)
+          .map(c => c.id);
+        if (section === 'grocery') {
+          // Grocery: all products in grocery categories OR with no category
+          if (sectionCatIds.length > 0) {
+            query = query.or(`category_id.in.(${sectionCatIds.join(',')}),category_id.is.null`);
+          } else {
+            query = query.is('category_id', null);
+          }
         } else {
-          // No clothing categories yet — return nothing
-          setProducts([]);
-          setLoadingProducts(false);
-          return;
+          // Clothing: only products explicitly in clothing categories
+          if (sectionCatIds.length > 0) {
+            query = query.in('category_id', sectionCatIds);
+          } else {
+            return null;
+          }
         }
       }
+
+      if (searchQuery.trim()) query = query.ilike('name', `%${searchQuery.trim()}%`);
+      if (selectedBrand) query = query.eq('brand', selectedBrand);
+      return query;
+    };
+
+    if (!buildQuery()) {
+      // No clothing categories yet — return nothing
+      setProducts([]);
+      setLoadingProducts(false);
+      return;
     }
 
-    if (searchQuery.trim()) query = query.ilike('name', `%${searchQuery.trim()}%`);
-    if (selectedBrand) query = query.eq('brand', selectedBrand);
+    // The Supabase API caps each response at its configured max row count, so
+    // page through with .range() until a page comes back short of a full page.
+    const pageSize = 1000;
+    const allProducts: Product[] = [];
+    let from = 0;
+    while (true) {
+      const { data } = await buildQuery()!.range(from, from + pageSize - 1);
+      allProducts.push(...(data ?? []));
+      if (!data || data.length < pageSize) break;
+      from += pageSize;
+    }
 
-    const { data } = await query;
-    setProducts(data ?? []);
+    setProducts(allProducts);
     setLoadingProducts(false);
   }, [selectedCategory, selectedBrand, searchQuery, section, categories]);
 
