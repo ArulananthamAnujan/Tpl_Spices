@@ -50,6 +50,7 @@ export default function CheckoutPage() {
   const [squareReady, setSquareReady] = useState(false);
   const cardRef = useRef<any>(null);
   const paymentsRef = useRef<any>(null);
+  const pendingDestroyRef = useRef<Promise<void>>(Promise.resolve());
 
   const deliveryFeeCents = fulfillmentType === 'DELIVERY' ? (store?.delivery_fee_cents ?? 0) : 0;
   const grandTotalCents = totalCents + deliveryFeeCents;
@@ -81,6 +82,10 @@ export default function CheckoutPage() {
     setSquareReady(false);
     const init = async () => {
       try {
+        // Wait for any card from a previous store selection to be fully torn
+        // down first — attaching a new one before that finishes can hang.
+        await pendingDestroyRef.current;
+        if (cancelled) return;
         const SquareSdk = await loadSquareSdk();
         const payments = SquareSdk.payments(appId, paymentLocationId);
         paymentsRef.current = payments;
@@ -98,7 +103,9 @@ export default function CheckoutPage() {
       cancelled = true;
       const existingCard = cardRef.current;
       cardRef.current = null;
-      if (existingCard) existingCard.destroy().catch(() => {});
+      if (existingCard) {
+        pendingDestroyRef.current = existingCard.destroy().catch(() => {});
+      }
     };
   }, [store, paymentLocationId]);
 
