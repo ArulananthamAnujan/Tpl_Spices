@@ -845,6 +845,16 @@ export default function AdminDashboardPage() {
                         <p className="text-xs text-gray-400">{(order.order_items ?? []).length} item(s)</p>
                       </div>
                     </div>
+                    {(order.order_items ?? []).length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-gray-100 space-y-1">
+                        {(order.order_items ?? []).map(item => (
+                          <div key={item.id} className="flex justify-between text-sm">
+                            <span className="text-gray-600">{item.name_snapshot} <span className="text-gray-400">×{item.qty}</span></span>
+                            <span className="text-gray-500">{formatPrice(item.unit_price_cents * item.qty)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -46,6 +46,14 @@ export default function CheckoutPage() {
   const [cardError, setCardError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
+  const [placedOrder, setPlacedOrder] = useState<{
+    items: { name: string; qty: number; lineTotalCents: number }[];
+    subtotalCents: number;
+    deliveryFeeCents: number;
+    totalCents: number;
+    fulfillmentType: FulfillmentType;
+    storeName: string;
+  } | null>(null);
   const [error, setError] = useState('');
   const [squareReady, setSquareReady] = useState(false);
   const cardRef = useRef<any>(null);
@@ -159,6 +167,18 @@ export default function CheckoutPage() {
         return;
       }
 
+      setPlacedOrder({
+        items: items.map(i => ({
+          name: `${i.product_name} – ${i.variation_name}`,
+          qty: i.quantity,
+          lineTotalCents: effectiveUnitCents(i, i.quantity) * i.quantity,
+        })),
+        subtotalCents: totalCents,
+        deliveryFeeCents,
+        totalCents: grandTotalCents,
+        fulfillmentType,
+        storeName: store.name,
+      });
       clearCart();
       setOrderId(body.order_id);
     } catch (err: any) {
@@ -169,7 +189,7 @@ export default function CheckoutPage() {
 
   if (orderId) {
     return (
-      <div className="min-h-screen bg-tpl-cream flex items-center justify-center px-4">
+      <div className="min-h-screen bg-tpl-cream flex items-center justify-center px-4 py-10">
         <div className="bg-white rounded-2xl shadow-card p-10 max-w-md w-full text-center">
           <div className="bg-tpl-pale w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
             <CheckCircle className="h-10 w-10 text-tpl-mid" />
@@ -177,6 +197,36 @@ export default function CheckoutPage() {
           <h2 className="font-display text-2xl font-bold text-tpl-dark mb-2">Order Placed!</h2>
           <p className="text-gray-500 text-sm mb-1">Your order has been received.</p>
           <p className="text-xs text-gray-400 font-mono break-all mb-6">#{orderId}</p>
+
+          {placedOrder && (
+            <div className="text-left bg-tpl-cream rounded-xl p-5 mb-6">
+              <p className="text-xs text-gray-500 mb-3">
+                {placedOrder.fulfillmentType === 'PICKUP' ? 'Pickup from' : 'Delivery from'} <span className="font-semibold text-tpl-dark">{placedOrder.storeName}</span>
+              </p>
+              <div className="space-y-1.5 mb-3">
+                {placedOrder.items.map((item, i) => (
+                  <div key={i} className="flex justify-between text-sm">
+                    <span className="text-gray-600 truncate mr-2">{item.name} ×{item.qty}</span>
+                    <span className="text-tpl-dark font-medium flex-shrink-0">{formatPrice(item.lineTotalCents)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-gray-200 pt-2 space-y-1">
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>Subtotal</span><span>{formatPrice(placedOrder.subtotalCents)}</span>
+                </div>
+                {placedOrder.fulfillmentType === 'DELIVERY' && (
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>Delivery</span><span>{placedOrder.deliveryFeeCents > 0 ? formatPrice(placedOrder.deliveryFeeCents) : 'Free'}</span>
+                  </div>
+                )}
+                <div className="flex justify-between font-bold text-tpl-dark pt-1">
+                  <span>Total Paid</span><span className="text-tpl-forest">{formatPrice(placedOrder.totalCents)}</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3">
             <button onClick={() => navigate('/account')} className="flex-1 py-3 bg-tpl-forest text-white rounded-xl font-semibold hover:bg-tpl-mid transition-colors text-sm">
               View Orders
