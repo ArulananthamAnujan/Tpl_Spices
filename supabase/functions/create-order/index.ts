@@ -90,6 +90,17 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // All payments route through one designated Square location regardless
+    // of which store the order is fulfilled from — some stores' own Square
+    // locations aren't configured correctly yet. Must match the frontend's
+    // paymentLocationId logic in CheckoutPage.tsx.
+    const { data: paymentStore } = await supabaseAdmin
+      .from("stores")
+      .select("square_location_id")
+      .eq("is_payment_location", true)
+      .maybeSingle();
+    const paymentLocationId = paymentStore?.square_location_id ?? store.square_location_id;
+
     if (fulfillment_type === "PICKUP" && !store.pickup_enabled) {
       return new Response(JSON.stringify({ error: "Pickup not available at this store" }), {
         status: 400,
@@ -244,7 +255,7 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify({
         idempotency_key: idempotencyKey,
         order: {
-          location_id: store.square_location_id,
+          location_id: paymentLocationId,
           line_items: lineItems,
           fulfillments: [squareFulfillment],
         },
@@ -272,7 +283,7 @@ Deno.serve(async (req: Request) => {
         source_id: payment_token,
         amount_money: { amount: squareOrderTotal, currency: "AUD" },
         order_id: squareOrder.id,
-        location_id: store.square_location_id,
+        location_id: paymentLocationId,
       }),
     });
 

@@ -22,6 +22,7 @@ export interface Store {
   delivery_enabled: boolean;
   delivery_radius_km: number;
   delivery_fee_cents: number;
+  is_payment_location: boolean;
   created_at: string;
 }
 

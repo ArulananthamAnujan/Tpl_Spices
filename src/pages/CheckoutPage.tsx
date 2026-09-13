@@ -54,6 +54,11 @@ export default function CheckoutPage() {
   const deliveryFeeCents = fulfillmentType === 'DELIVERY' ? (store?.delivery_fee_cents ?? 0) : 0;
   const grandTotalCents = totalCents + deliveryFeeCents;
 
+  // All payments route through one designated Square location regardless of
+  // which store the customer picked for pickup/delivery — some stores' own
+  // Square locations aren't configured correctly yet.
+  const paymentLocationId = stores.find(s => s.is_payment_location)?.square_location_id ?? store?.square_location_id;
+
   useEffect(() => {
     if (items.length === 0) { navigate('/cart'); return; }
     if (!user) { navigate('/auth'); return; }
@@ -66,7 +71,7 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
-    if (!store || !items.length) return;
+    if (!store || !items.length || !paymentLocationId) return;
     const appId = import.meta.env.VITE_SQUARE_APP_ID as string | undefined;
     if (!appId) {
       setCardError(`Payments aren't configured yet — set VITE_SQUARE_APP_ID (currently running in ${SQUARE_ENV} mode).`);
@@ -77,7 +82,7 @@ export default function CheckoutPage() {
     const init = async () => {
       try {
         const SquareSdk = await loadSquareSdk();
-        const payments = SquareSdk.payments(appId, store.square_location_id);
+        const payments = SquareSdk.payments(appId, paymentLocationId);
         paymentsRef.current = payments;
         const card = await payments.card();
         if (cancelled) { await card.destroy(); return; }
@@ -95,7 +100,7 @@ export default function CheckoutPage() {
       cardRef.current = null;
       if (existingCard) existingCard.destroy().catch(() => {});
     };
-  }, [store]);
+  }, [store, paymentLocationId]);
 
   useEffect(() => {
     if (store) {

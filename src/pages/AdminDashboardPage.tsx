@@ -344,6 +344,11 @@ export default function AdminDashboardPage() {
   const saveStore = async () => {
     if (!storeForm) return;
     setSavingStore(true);
+    // Only one store can be the payment location at a time.
+    if (storeForm.is_payment_location) {
+      await supabase.from('stores').update({ is_payment_location: false }).neq('id', storeForm.id ?? '');
+      setStores(prev => prev.map(s => s.id === storeForm.id ? s : { ...s, is_payment_location: false }));
+    }
     if (storeForm.id) {
       const { error } = await supabase.from('stores').update(storeForm).eq('id', storeForm.id);
       if (!error) { setStores(prev => prev.map(s => s.id === storeForm.id ? { ...s, ...storeForm } as Store : s)); setStoreForm(null); }
@@ -885,6 +890,11 @@ export default function AdminDashboardPage() {
                         <input type="checkbox" checked={!!storeForm.delivery_enabled} onChange={e => setStoreForm(f => ({ ...f!, delivery_enabled: e.target.checked }))} className="rounded" />
                         Delivery enabled
                       </label>
+                      <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <input type="checkbox" checked={!!storeForm.is_payment_location} onChange={e => setStoreForm(f => ({ ...f!, is_payment_location: e.target.checked }))} className="rounded" />
+                        Process all payments through this store's Square location
+                      </label>
+                      <p className="text-xs text-gray-400 -mt-2">Only one store can be checked — checking this one unchecks any other.</p>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={saveStore} disabled={savingStore} className="px-4 py-2 bg-tpl-forest text-white text-sm font-semibold rounded-lg hover:bg-tpl-mid transition-colors disabled:opacity-50">
@@ -908,6 +918,9 @@ export default function AdminDashboardPage() {
                             <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
                               Delivery ({store.delivery_radius_km}km · {store.delivery_fee_cents > 0 ? formatPrice(store.delivery_fee_cents) : 'free'})
                             </span>
+                          )}
+                          {store.is_payment_location && (
+                            <span className="text-xs bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-medium">Processes all payments</span>
                           )}
                         </div>
                       </div>
