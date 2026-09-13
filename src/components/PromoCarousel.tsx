@@ -65,7 +65,13 @@ export default function PromoCarousel() {
 
   if (slides.length === 0) {
     return (
-      <div className="bg-gradient-to-r from-tpl-dark via-tpl-forest to-tpl-mid py-16 px-4 flex items-center justify-center">
+      <div
+        className="bg-tpl-forest bg-cover py-20 px-4 flex items-center justify-center"
+        style={{
+          backgroundImage: `linear-gradient(rgba(15,26,10,0.75), rgba(15,26,10,0.75)), url('/images/spices-feature-strip-bg.png')`,
+          backgroundPosition: '60% 45%',
+        }}
+      >
         <div className="text-center">
           <h1 className="font-display text-3xl sm:text-4xl text-white font-bold leading-tight">
             Authentic Sri Lankan<br />
