@@ -206,12 +206,92 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Sync stock counts from Square Inventory, using whichever store is
+    // flagged as the payment location as the one real Square location — the
+    // same shared stock is then mirrored to every store, matching how this
+    // business actually runs (one stockroom, multiple pickup/delivery points).
+    let inventorySynced = 0;
+    const { data: allStores } = await supabaseAdmin
+      .from("stores")
+      .select("id, square_location_id, is_payment_location");
+    const refStore = (allStores ?? []).find(s => s.is_payment_location) ?? (allStores ?? [])[0];
+
+    if (refStore?.square_location_id && (allStores ?? []).length > 0) {
+      const { data: dbVars } = await supabaseAdmin
+        .from("product_variations")
+        .select("id, square_variation_id");
+      const squareIdToVarId: Record<string, string> = {};
+      for (const v of dbVars ?? []) squareIdToVarId[v.square_variation_id] = v.id;
+      const allSquareVarIds = Object.keys(squareIdToVarId);
+
+      // Square counts from Square in chunks (API limit is 1000 object IDs per call).
+      const squareQtyByVarId: Record<string, number> = {};
+      for (let i = 0; i < allSquareVarIds.length; i += 1000) {
+        const chunk = allSquareVarIds.slice(i, i + 1000);
+        let invCursor: string | null = null;
+        do {
+          const invRes = await fetch(`${squareBase}/v2/inventory/counts/batch-retrieve`, {
+            method: "POST",
+            headers: squareHeaders,
+            body: JSON.stringify({
+              catalog_object_ids: chunk,
+              location_ids: [refStore.square_location_id],
+              ...(invCursor ? { cursor: invCursor } : {}),
+            }),
+          });
+          if (!invRes.ok) break; // don't fail the whole sync over inventory
+          const invData = await invRes.json();
+          for (const count of invData.counts ?? []) {
+            if (count.state !== "IN_STOCK") continue;
+            const varId = squareIdToVarId[count.catalog_object_id];
+            if (varId) squareQtyByVarId[varId] = parseInt(count.quantity, 10) || 0;
+          }
+          invCursor = invData.cursor ?? null;
+        } while (invCursor);
+      }
+
+      const trackedVarIds = Object.keys(squareQtyByVarId);
+      if (trackedVarIds.length > 0) {
+        const { data: currentInv } = await supabaseAdmin
+          .from("store_inventory")
+          .select("store_id, variation_id, quantity")
+          .in("variation_id", trackedVarIds);
+        const currentByKey: Record<string, number> = {};
+        for (const row of currentInv ?? []) currentByKey[`${row.store_id}:${row.variation_id}`] = row.quantity;
+
+        const movements: any[] = [];
+        for (const store of allStores ?? []) {
+          for (const varId of trackedVarIds) {
+            const squareQty = squareQtyByVarId[varId];
+            const currentQty = currentByKey[`${store.id}:${varId}`] ?? 0;
+            const delta = squareQty - currentQty;
+            if (delta !== 0) {
+              movements.push({
+                store_id: store.id,
+                variation_id: varId,
+                delta,
+                reason: "adjustment",
+                note: "Square inventory sync",
+              });
+            }
+          }
+        }
+
+        if (movements.length > 0) {
+          const { error: movesErr } = await supabaseAdmin.from("inventory_movements").insert(movements);
+          if (movesErr) throw new Error("inventory sync: " + movesErr.message);
+          inventorySynced = movements.length;
+        }
+      }
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
         categories: catCount,
         products: prodCount,
         variations: varCount,
+        inventoryAdjustments: inventorySynced,
         squareTotal: allObjects.length,
         byType: typeCounts,
       }),

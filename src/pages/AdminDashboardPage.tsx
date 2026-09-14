@@ -308,7 +308,7 @@ export default function AdminDashboardPage() {
       });
       const body = await res.json();
       if (!res.ok || body.error) { setSyncMessage('Error: ' + (body.error || 'sync failed')); }
-      else { setSyncMessage(`Synced successfully: ${body.categories ?? 0} categories, ${body.products ?? 0} products, ${body.variations ?? 0} variations. (${body.squareTotal ?? 0} total objects from Square)`); }
+      else { setSyncMessage(`Synced successfully: ${body.categories ?? 0} categories, ${body.products ?? 0} products, ${body.variations ?? 0} variations, ${body.inventoryAdjustments ?? 0} stock updates. (${body.squareTotal ?? 0} total objects from Square)`); }
     } catch (e: any) {
       setSyncMessage('Error: ' + e.message);
     }
@@ -997,7 +997,8 @@ export default function AdminDashboardPage() {
               <div className="bg-white rounded-2xl shadow-card p-8">
                 <h2 className="font-semibold text-tpl-dark text-lg mb-2">Square Catalogue Sync</h2>
                 <p className="text-sm text-gray-500 mb-6">
-                  Pull all products, categories, and prices from your Square catalogue into Supabase.
+                  Pull all products, categories, prices, and stock counts from your Square catalogue into Supabase.
+                  Stock is synced from your primary store's Square location and mirrored to every store.
                   Use <strong>Test Connection</strong> first to confirm your token is working, then <strong>Sync</strong>.
                 </p>
 
