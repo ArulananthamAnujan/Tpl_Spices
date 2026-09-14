@@ -614,9 +614,10 @@ export default function AdminDashboardPage() {
           .upload(filePath, blob, { contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`, upsert: true });
         if (uploadError) throw new Error(uploadError.message);
         const { data: { publicUrl } } = supabase.storage.from('product-images').getPublicUrl(filePath);
-        const { error: updateError } = await supabase.from('products').update({ image_url: publicUrl }).eq('id', product.id);
+        const bustedUrl = `${publicUrl}?v=${Date.now()}`;
+        const { error: updateError } = await supabase.from('products').update({ image_url: bustedUrl }).eq('id', product.id);
         if (updateError) throw new Error(updateError.message);
-        setProducts(prev => prev.map(p => p.id === product.id ? { ...p, image_url: publicUrl } : p));
+        setProducts(prev => prev.map(p => p.id === product.id ? { ...p, image_url: bustedUrl } : p));
       } catch { errors++; }
     }
     setLocalUploadProgress({ done: riceProducts.length, total: riceProducts.length, current: '', errors });
@@ -637,7 +638,10 @@ export default function AdminDashboardPage() {
     const { error } = await supabase.storage.from('product-images').upload(path, file, { upsert: true });
     if (error) { alert('Upload failed: ' + error.message); setUploadingProductImg(false); return; }
     const { data } = supabase.storage.from('product-images').getPublicUrl(path);
-    setProductImageUrl(data.publicUrl);
+    // Re-uploading a photo for the same product reuses this exact path, so bust
+    // the cache — otherwise the browser/CDN can keep serving the old photo at
+    // this URL even though the file underneath it has actually changed.
+    setProductImageUrl(`${data.publicUrl}?v=${Date.now()}`);
     setUploadingProductImg(false);
   };
 
@@ -669,9 +673,10 @@ export default function AdminDashboardPage() {
       const { error: uploadError } = await supabase.storage.from('product-images').upload(filePath, blob, { contentType, upsert: true });
       if (uploadError) return null;
       const { data: { publicUrl } } = supabase.storage.from('product-images').getPublicUrl(filePath);
+      const bustedUrl = `${publicUrl}?v=${Date.now()}`;
       // Update the product record to the new permanent URL
-      await supabase.from('products').update({ image_url: publicUrl }).eq('id', product.id);
-      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, image_url: publicUrl } : p));
+      await supabase.from('products').update({ image_url: bustedUrl }).eq('id', product.id);
+      setProducts(prev => prev.map(p => p.id === product.id ? { ...p, image_url: bustedUrl } : p));
       return publicUrl;
     } catch {
       return null;
