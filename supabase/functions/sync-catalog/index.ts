@@ -157,8 +157,18 @@ Deno.serve(async (req: Request) => {
       prodCount = prods.length;
     }
 
-    // Only overwrite image_url for items where Square actually has a photo.
+    // Only set image_url from Square for products that don't already have a
+    // photo. Once a photo is set — whether from Square, uploaded by hand, or
+    // AI-generated — a later sync never overwrites it, so curated photos
+    // survive syncs even if Square happens to have its own image too.
+    const { data: productsMissingPhoto } = await supabaseAdmin
+      .from("products")
+      .select("square_item_id")
+      .is("image_url", null);
+    const missingPhotoIds = new Set((productsMissingPhoto ?? []).map(p => p.square_item_id));
+
     const imageUpdates = squareItems
+      .filter(item => missingPhotoIds.has(item.id))
       .map(item => {
         const itemData = item.item_data ?? {};
         const imageId = item.image_ids?.[0] ?? itemData.image_ids?.[0] ?? null;
