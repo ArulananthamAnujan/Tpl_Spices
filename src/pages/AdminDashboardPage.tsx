@@ -308,7 +308,14 @@ export default function AdminDashboardPage() {
       });
       const body = await res.json();
       if (!res.ok || body.error) { setSyncMessage('Error: ' + (body.error || 'sync failed')); }
-      else { setSyncMessage(`Synced successfully: ${body.categories ?? 0} categories, ${body.products ?? 0} products, ${body.variations ?? 0} variations, ${body.inventoryAdjustments ?? 0} stock updates. (${body.squareTotal ?? 0} total objects from Square)`); }
+      else {
+        const noVariations: string[] = body.productsWithoutVariations ?? [];
+        const unpriced: string[] = body.unpricedVariations ?? [];
+        let msg = `Synced successfully: ${body.categories ?? 0} categories, ${body.products ?? 0} products, ${body.variations ?? 0} variations, ${body.inventoryAdjustments ?? 0} stock updates. (${body.squareTotal ?? 0} total objects from Square)`;
+        if (noVariations.length) msg += `\n\nNo variations in Square (shown as "Price on request"): ${noVariations.join(', ')}`;
+        if (unpriced.length) msg += `\n\nNo price set in Square (synced as $0): ${unpriced.join(', ')}`;
+        setSyncMessage(msg);
+      }
     } catch (e: any) {
       setSyncMessage('Error: ' + e.message);
     }
@@ -1110,7 +1117,7 @@ export default function AdminDashboardPage() {
                 {syncMessage && (
                   <div className={`mt-4 flex items-start gap-2 rounded-xl p-4 ${syncMessage.startsWith('Error') ? 'bg-red-50 border border-red-200' : 'bg-tpl-pale border border-tpl-lime/30'}`}>
                     {syncMessage.startsWith('Error') ? <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" /> : <CheckCircle className="h-4 w-4 text-tpl-forest mt-0.5 flex-shrink-0" />}
-                    <p className={`text-sm ${syncMessage.startsWith('Error') ? 'text-red-700' : 'text-tpl-forest'}`}>{syncMessage}</p>
+                    <p className={`text-sm whitespace-pre-line ${syncMessage.startsWith('Error') ? 'text-red-700' : 'text-tpl-forest'}`}>{syncMessage}</p>
                   </div>
                 )}
               </div>
