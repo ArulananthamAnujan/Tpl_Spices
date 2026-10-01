@@ -29,7 +29,9 @@ export default function ProductCard({ product, store, stock, onClick }: Props) {
 
   const variations = product.variations ?? [];
   const defaultVariation: ProductVariation | undefined = variations[0];
-  const price = defaultVariation?.price_cents;
+  // Square items with no fixed price (e.g. "Variable price") sync as $0 —
+  // those are priced on request and can't be added to the cart.
+  const price = defaultVariation && defaultVariation.price_cents > 0 ? defaultVariation.price_cents : undefined;
 
   const trackedQty = defaultVariation && stock ? stock[defaultVariation.id] : undefined;
   const outOfStock = trackedQty !== undefined && trackedQty <= 0;
@@ -43,7 +45,7 @@ export default function ProductCard({ product, store, stock, onClick }: Props) {
   const handleAdd = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!store) { navigate('/'); return; }
-    if (!defaultVariation || outOfStock) return;
+    if (!defaultVariation || price === undefined || outOfStock) return;
     setAdding(true);
     addItem({
       variation_id: defaultVariation.id,
@@ -133,9 +135,9 @@ export default function ProductCard({ product, store, stock, onClick }: Props) {
                 <span className="text-tpl-forest font-bold text-base">{formatPrice(price)}</span>
               )
             ) : (
-              <span className="text-gray-400 text-sm">Price on request</span>
+              <span className="text-gray-500 text-sm">Price will be provided to you on request</span>
             )}
-            {defaultVariation && (
+            {defaultVariation && price !== undefined && (
               <p className="text-xs text-gray-400">{defaultVariation.name}</p>
             )}
             {hasWholesale && defaultVariation && (
@@ -147,7 +149,7 @@ export default function ProductCard({ product, store, stock, onClick }: Props) {
               <p className="text-xs text-tpl-amber font-medium mt-0.5">Only {trackedQty} left</p>
             )}
           </div>
-          {store && defaultVariation && !outOfStock && (
+          {store && defaultVariation && price !== undefined && !outOfStock && (
             <button
               onClick={handleAdd}
               className={`p-2 rounded-xl transition-all duration-300 ${adding ? 'bg-tpl-lime text-tpl-dark scale-110' : 'bg-tpl-forest text-white hover:bg-tpl-mid'}`}

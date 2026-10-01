@@ -134,6 +134,7 @@ Deno.serve(async (req: Request) => {
     for (const v of variations ?? []) {
       const product = Array.isArray((v as any).products) ? (v as any).products[0] : (v as any).products;
       if (product?.active === false) continue; // don't sell delisted items
+      if (!(v.price_cents > 0)) continue; // no fixed price in Square — priced on request
       varById.set(v.id, v);
     }
 

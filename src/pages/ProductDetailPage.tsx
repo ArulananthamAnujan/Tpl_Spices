@@ -66,13 +66,15 @@ export default function ProductDetailPage() {
 
   const selectedStock = selectedVariation ? stockMap[selectedVariation.id] : undefined;
   const outOfStock = selectedStock !== undefined && selectedStock <= 0;
+  // Square items with no fixed price sync as $0 — priced on request, not sold online.
+  const priceOnRequest = !!selectedVariation && selectedVariation.price_cents <= 0;
 
   useEffect(() => {
     if (selectedStock !== undefined && qty > selectedStock) setQty(Math.max(1, selectedStock));
   }, [selectedStock]);
 
   const handleAdd = () => {
-    if (!selectedVariation || !store || !product || outOfStock) return;
+    if (!selectedVariation || !store || !product || outOfStock || priceOnRequest) return;
     addItem({
       variation_id: selectedVariation.id,
       product_id: product.id,
@@ -137,14 +139,18 @@ export default function ProductDetailPage() {
                         className={`px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${selectedVariation?.id === v.id ? 'border-tpl-forest bg-tpl-pale text-tpl-forest' : 'border-gray-200 text-gray-600 hover:border-tpl-mid'}`}
                       >
                         <div>{v.name}</div>
-                        <div className="font-bold text-tpl-forest mt-0.5">{formatPrice(v.price_cents)}</div>
+                        <div className="font-bold text-tpl-forest mt-0.5">{v.price_cents > 0 ? formatPrice(v.price_cents) : 'On request'}</div>
                       </button>
                     ))}
                   </div>
                 </div>
               )}
 
-              {selectedVariation && (() => {
+              {priceOnRequest && (
+                <p className="text-lg font-semibold text-tpl-forest mb-2">Price will be provided to you on request</p>
+              )}
+
+              {selectedVariation && !priceOnRequest && (() => {
                 const promoOn = isPromoActive(selectedVariation);
                 const unit = effectiveUnitCents(selectedVariation, qty);
                 const wholesaleOn = isWholesaleActive(selectedVariation, qty);
@@ -177,7 +183,7 @@ export default function ProductDetailPage() {
               )}
 
               {/* Quantity + Add */}
-              {store ? (
+              {priceOnRequest ? null : store ? (
                 <div className="flex items-center gap-4 mt-auto">
                   <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden">
                     <button onClick={() => setQty(q => Math.max(1, q - 1))} disabled={outOfStock} className="px-3 py-2 text-gray-500 hover:bg-gray-50 text-lg font-bold disabled:opacity-30">−</button>
