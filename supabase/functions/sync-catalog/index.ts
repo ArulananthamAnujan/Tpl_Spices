@@ -115,6 +115,30 @@ Deno.serve(async (req: Request) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // Supabase returns at most 1000 rows per query, so read whole tables in
+    // pages — otherwise products beyond the first 1000 silently lose their
+    // prices, photos and stock during the sync.
+    const fetchAll = async (
+      table: string,
+      columns: string,
+      filter?: (q: any) => any,
+      orderBy: string[] = ["id"],
+    ) => {
+      const rows: any[] = [];
+      const pageSize = 1000;
+      for (let from = 0; ; from += pageSize) {
+        let query: any = supabaseAdmin.from(table).select(columns);
+        for (const col of orderBy) query = query.order(col);
+        query = query.range(from, from + pageSize - 1);
+        if (filter) query = filter(query);
+        const { data, error } = await query;
+        if (error) throw new Error(`${table} read: ${error.message}`);
+        rows.push(...(data ?? []));
+        if (!data || data.length < pageSize) break;
+      }
+      return rows;
+    };
+
     // Upsert categories
     let catCount = 0;
     if (squareCategories.length > 0) {
@@ -130,7 +154,7 @@ Deno.serve(async (req: Request) => {
       catCount = cats.length;
     }
 
-    const { data: dbCats } = await supabaseAdmin.from("categories").select("id, square_id");
+    const dbCats = await fetchAll("categories", "id, square_id");
     const catMap: Record<string, string> = {};
     for (const c of dbCats ?? []) catMap[c.square_id] = c.id;
 
@@ -161,10 +185,7 @@ Deno.serve(async (req: Request) => {
     // photo. Once a photo is set — whether from Square, uploaded by hand, or
     // AI-generated — a later sync never overwrites it, so curated photos
     // survive syncs even if Square happens to have its own image too.
-    const { data: productsMissingPhoto } = await supabaseAdmin
-      .from("products")
-      .select("square_item_id")
-      .is("image_url", null);
+    const productsMissingPhoto = await fetchAll("products", "id, square_item_id", q => q.is("image_url", null));
     const missingPhotoIds = new Set((productsMissingPhoto ?? []).map(p => p.square_item_id));
 
     const imageUpdates = squareItems
@@ -184,7 +205,7 @@ Deno.serve(async (req: Request) => {
       if (error) throw new Error("product images upsert: " + error.message);
     }
 
-    const { data: dbProds } = await supabaseAdmin.from("products").select("id, square_item_id");
+    const dbProds = await fetchAll("products", "id, square_item_id");
     const prodMap: Record<string, string> = {};
     for (const p of dbProds ?? []) prodMap[p.square_item_id] = p.id;
 
@@ -269,9 +290,7 @@ Deno.serve(async (req: Request) => {
     let inventorySynced = 0;
 
     if (refStore?.square_location_id && (allStores ?? []).length > 0) {
-      const { data: dbVars } = await supabaseAdmin
-        .from("product_variations")
-        .select("id, square_variation_id");
+      const dbVars = await fetchAll("product_variations", "id, square_variation_id");
       const squareIdToVarId: Record<string, string> = {};
       for (const v of dbVars ?? []) squareIdToVarId[v.square_variation_id] = v.id;
       const allSquareVarIds = Object.keys(squareIdToVarId);
@@ -304,10 +323,9 @@ Deno.serve(async (req: Request) => {
 
       const trackedVarIds = Object.keys(squareQtyByVarId);
       if (trackedVarIds.length > 0) {
-        const { data: currentInv } = await supabaseAdmin
-          .from("store_inventory")
-          .select("store_id, variation_id, quantity")
-          .in("variation_id", trackedVarIds);
+        const currentInv = await fetchAll(
+          "store_inventory", "store_id, variation_id, quantity", undefined, ["store_id", "variation_id"]
+        );
         const currentByKey: Record<string, number> = {};
         for (const row of currentInv ?? []) currentByKey[`${row.store_id}:${row.variation_id}`] = row.quantity;
 
