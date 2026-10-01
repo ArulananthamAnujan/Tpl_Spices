@@ -188,21 +188,58 @@ Deno.serve(async (req: Request) => {
     const prodMap: Record<string, string> = {};
     for (const p of dbProds ?? []) prodMap[p.square_item_id] = p.id;
 
+    // The payment-location store is treated as the one real Square location
+    // (see the inventory sync below); its price is preferred when an item is
+    // priced per location.
+    const { data: allStores } = await supabaseAdmin
+      .from("stores")
+      .select("id, square_location_id, is_payment_location");
+    const refStore = (allStores ?? []).find(s => s.is_payment_location) ?? (allStores ?? [])[0];
+
+    // Variations come back as top-level objects, but also nested inside each
+    // item — merge both so none are missed.
+    const variationById = new Map<string, any>();
+    for (const item of squareItems) {
+      for (const v of item.item_data?.variations ?? []) variationById.set(v.id, v);
+    }
+    for (const v of squareVariations) variationById.set(v.id, v);
+
+    // When a price is set per location in Square ("Price by location"), the
+    // variation's base price_money is empty and the real price lives in
+    // location_overrides. Fall back to it so those items don't sync as $0.
+    const resolvePrice = (vd: any): { amount: number; currency: string } | null => {
+      if (vd.price_money?.amount != null) {
+        return { amount: Number(vd.price_money.amount), currency: vd.price_money.currency ?? "AUD" };
+      }
+      const overrides = (vd.location_overrides ?? []).filter((o: any) => o.price_money?.amount != null);
+      const override =
+        overrides.find((o: any) => o.location_id === refStore?.square_location_id) ?? overrides[0];
+      if (override) {
+        return { amount: Number(override.price_money.amount), currency: override.price_money.currency ?? "AUD" };
+      }
+      return null;
+    };
+
     // Upsert variations
     let varCount = 0;
-    if (squareVariations.length > 0) {
-      const vars = squareVariations
+    const unpriced: string[] = [];
+    const itemNameById: Record<string, string> = {};
+    for (const item of squareItems) itemNameById[item.id] = item.item_data?.name ?? "Unknown";
+
+    if (variationById.size > 0) {
+      const vars = [...variationById.values()]
         .map(v => {
           const vd = v.item_variation_data ?? {};
           const productId = prodMap[vd.item_id ?? ""] ?? null;
           if (!productId) return null;
-          const amount = vd.price_money?.amount ?? 0;
+          const price = resolvePrice(vd);
+          if (!price) unpriced.push(`${itemNameById[vd.item_id] ?? "Unknown"} (${vd.name ?? "Regular"})`);
           return {
             square_variation_id: v.id,
             product_id: productId,
             name: vd.name ?? "Regular",
-            price_cents: Number(amount),
-            currency: vd.price_money?.currency ?? "AUD",
+            price_cents: price?.amount ?? 0,
+            currency: price?.currency ?? "AUD",
           };
         })
         .filter(Boolean) as any[];
@@ -221,10 +258,6 @@ Deno.serve(async (req: Request) => {
     // same shared stock is then mirrored to every store, matching how this
     // business actually runs (one stockroom, multiple pickup/delivery points).
     let inventorySynced = 0;
-    const { data: allStores } = await supabaseAdmin
-      .from("stores")
-      .select("id, square_location_id, is_payment_location");
-    const refStore = (allStores ?? []).find(s => s.is_payment_location) ?? (allStores ?? [])[0];
 
     if (refStore?.square_location_id && (allStores ?? []).length > 0) {
       const { data: dbVars } = await supabaseAdmin
@@ -301,6 +334,7 @@ Deno.serve(async (req: Request) => {
         categories: catCount,
         products: prodCount,
         variations: varCount,
+        unpricedVariations: unpriced,
         inventoryAdjustments: inventorySynced,
         squareTotal: allObjects.length,
         byType: typeCounts,
