@@ -253,6 +253,15 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Square items that came back with no variations at all show up on the
+    // site as "Price on request" — list them so they can be checked in Square.
+    const itemIdsWithVariations = new Set(
+      [...variationById.values()].map(v => v.item_variation_data?.item_id)
+    );
+    const withoutVariations = squareItems
+      .filter(item => !item.is_deleted && !itemIdsWithVariations.has(item.id))
+      .map(item => itemNameById[item.id]);
+
     // Sync stock counts from Square Inventory, using whichever store is
     // flagged as the payment location as the one real Square location — the
     // same shared stock is then mirrored to every store, matching how this
@@ -335,6 +344,7 @@ Deno.serve(async (req: Request) => {
         products: prodCount,
         variations: varCount,
         unpricedVariations: unpriced,
+        productsWithoutVariations: withoutVariations,
         inventoryAdjustments: inventorySynced,
         squareTotal: allObjects.length,
         byType: typeCounts,
