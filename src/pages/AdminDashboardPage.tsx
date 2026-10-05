@@ -3,7 +3,7 @@ import {
   Store as StoreIcon, Users, Package, RefreshCw, Plus, Edit2, Trash2,
   CheckCircle, AlertCircle, Megaphone, Upload, X, ToggleLeft, ToggleRight,
   Image as ImageIcon, Type, Tag, Shirt, Salad, Camera, Search as SearchIcon, Wand2, Loader2, Boxes,
-  History as HistoryIcon, Clock, PackagePlus, ChefHat, Flame
+  History as HistoryIcon, Clock, PackagePlus, ChefHat, Flame, Barcode
 } from 'lucide-react';
 
 const CATEGORY_SECTIONS: { id: Category['section']; label: string; icon: typeof Salad }[] = [
@@ -17,8 +17,9 @@ import { Store, Profile, Order, PromoSlide, Category, Product, formatPrice } fro
 import OrderStatusBadge from '../components/OrderStatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import PricingPromotionsPanel from '../components/PricingPromotionsPanel';
+import BarcodeLabelsPanel from '../components/BarcodeLabelsPanel';
 
-type Tab = 'orders' | 'stores' | 'staff' | 'catalog' | 'categories' | 'products' | 'inventory' | 'pricing' | 'promos';
+type Tab = 'orders' | 'stores' | 'staff' | 'catalog' | 'categories' | 'products' | 'inventory' | 'pricing' | 'labels' | 'promos';
 
 // A single row from the inventory_movements ledger.
 type InvMove = {
@@ -311,7 +312,7 @@ export default function AdminDashboardPage() {
       else {
         const noVariations: string[] = body.productsWithoutVariations ?? [];
         const unpriced: string[] = body.unpricedVariations ?? [];
-        let msg = `Synced successfully: ${body.categories ?? 0} categories, ${body.products ?? 0} products, ${body.variations ?? 0} variations, ${body.inventoryAdjustments ?? 0} stock updates. (${body.squareTotal ?? 0} total objects from Square)`;
+        let msg = `Synced successfully: ${body.categories ?? 0} categories, ${body.products ?? 0} products, ${body.variations ?? 0} variations, ${body.inventoryAdjustments ?? 0} stock updates, ${body.barcodesImported ?? 0} barcodes imported. (${body.squareTotal ?? 0} total objects from Square)`;
         if (noVariations.length) msg += `\n\nNo variations in Square (shown as "Price will be provided to you on request"): ${noVariations.join(', ')}`;
         if (unpriced.length) msg += `\n\nNo price set in Square (shown as "Price will be provided to you on request"): ${unpriced.join(', ')}`;
         setSyncMessage(msg);
@@ -809,6 +810,7 @@ export default function AdminDashboardPage() {
     { id: 'products', label: 'Product Photos', icon: <Camera className="h-4 w-4" /> },
     { id: 'inventory', label: 'Inventory', icon: <Boxes className="h-4 w-4" /> },
     { id: 'pricing', label: 'Pricing & Promos', icon: <Tag className="h-4 w-4" /> },
+    { id: 'labels', label: 'Barcode Labels', icon: <Barcode className="h-4 w-4" /> },
     { id: 'promos', label: 'Banners', icon: <Megaphone className="h-4 w-4" /> },
   ];
 
@@ -1805,6 +1807,7 @@ export default function AdminDashboardPage() {
 
             {/* PRICING & PROMOTIONS TAB */}
             {tab === 'pricing' && <PricingPromotionsPanel />}
+            {tab === 'labels' && <BarcodeLabelsPanel />}
 
             {/* INVENTORY TAB */}
             {tab === 'inventory' && (

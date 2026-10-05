@@ -274,6 +274,31 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // Copy pack barcodes from Square (UPC, or a SKU that looks like a barcode)
+    // onto variations that don't have one yet, for Admin → Barcode Labels.
+    // Never overwrites a barcode already set. Best-effort: a failure here
+    // (e.g. the barcode column not migrated yet) doesn't fail the sync.
+    let barcodesImported = 0;
+    try {
+      const noBarcode = await fetchAll("product_variations", "id, square_variation_id", q => q.is("barcode", null));
+      const squareCodeById: Record<string, string> = {};
+      for (const v of variationById.values()) {
+        const vd = v.item_variation_data ?? {};
+        const sku = typeof vd.sku === "string" && /^\d{8,14}$/.test(vd.sku.trim()) ? vd.sku.trim() : null;
+        const code = (typeof vd.upc === "string" && vd.upc.trim()) || sku;
+        if (code) squareCodeById[v.id] = code;
+      }
+      const updates = noBarcode
+        .filter(r => squareCodeById[r.square_variation_id])
+        .map(r => ({ id: r.id, barcode: squareCodeById[r.square_variation_id] }));
+      for (let i = 0; i < updates.length; i += 50) {
+        const results = await Promise.all(updates.slice(i, i + 50).map(u =>
+          supabaseAdmin.from("product_variations").update({ barcode: u.barcode }).eq("id", u.id)
+        ));
+        barcodesImported += results.filter(r => !r.error).length; // duplicates are skipped
+      }
+    } catch (_) { /* barcode import is optional */ }
+
     // Square items that came back with no variations at all show up on the
     // site as "Price on request" — list them so they can be checked in Square.
     const itemIdsWithVariations = new Set(
@@ -363,6 +388,7 @@ Deno.serve(async (req: Request) => {
         variations: varCount,
         unpricedVariations: unpriced,
         productsWithoutVariations: withoutVariations,
+        barcodesImported,
         inventoryAdjustments: inventorySynced,
         squareTotal: allObjects.length,
         byType: typeCounts,
