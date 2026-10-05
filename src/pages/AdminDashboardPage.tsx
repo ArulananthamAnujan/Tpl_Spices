@@ -312,7 +312,7 @@ export default function AdminDashboardPage() {
       else {
         const noVariations: string[] = body.productsWithoutVariations ?? [];
         const unpriced: string[] = body.unpricedVariations ?? [];
-        let msg = `Synced successfully: ${body.categories ?? 0} categories, ${body.products ?? 0} products, ${body.variations ?? 0} variations, ${body.inventoryAdjustments ?? 0} stock updates, ${body.barcodesImported ?? 0} barcodes imported. (${body.squareTotal ?? 0} total objects from Square)`;
+        let msg = `Synced successfully: ${body.categories ?? 0} categories, ${body.products ?? 0} products, ${body.variations ?? 0} variations, ${body.inventoryAdjustments ?? 0} stock updates. (${body.squareTotal ?? 0} total objects from Square)`;
         if (noVariations.length) msg += `\n\nNo variations in Square (shown as "Price will be provided to you on request"): ${noVariations.join(', ')}`;
         if (unpriced.length) msg += `\n\nNo price set in Square (shown as "Price will be provided to you on request"): ${unpriced.join(', ')}`;
         setSyncMessage(msg);

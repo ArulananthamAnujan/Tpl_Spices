@@ -77,7 +77,6 @@ export interface ProductVariation {
   promo_value: number | null;
   promo_start: string | null;
   promo_end: string | null;
-  barcode?: string | null;
 }
 
 export interface StoreInventory {
