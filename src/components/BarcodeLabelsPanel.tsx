@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import JsBarcode from 'jsbarcode';
 import { Search, Printer, Download, Trash2, ScanLine, Wand2, Loader2, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -225,11 +225,18 @@ export default function BarcodeLabelsPanel() {
     for (let k = 0; k < (qty[p.id] ?? 0) && labels.length < MAX_LABELS; k++) labels.push(p);
   }
 
-  const print = () => {
+  // Labels sent to the printer: the whole list, or just one product when its
+  // row's Print button is used.
+  const [printOnly, setPrintOnly] = useState<LabelProduct[] | null>(null);
+  const printLabels = printOnly ?? labels;
+
+  const print = (only?: LabelProduct[]) => {
+    flushSync(() => setPrintOnly(only ?? null));
     document.body.classList.add('printing-labels');
     const done = () => {
       document.body.classList.remove('printing-labels');
       window.removeEventListener('afterprint', done);
+      setPrintOnly(null);
     };
     window.addEventListener('afterprint', done);
     window.print();
@@ -316,7 +323,7 @@ export default function BarcodeLabelsPanel() {
             {products.length > 0 && (
               <div className="relative w-full sm:w-64">
                 <Search className="h-4 w-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input className={`${inputCls} pl-9`} placeholder="Filter by name, code, category"
+                <input className={`${inputCls} pl-9`} placeholder="Search saved products"
                   value={filter} onChange={e => setFilter(e.target.value)} />
               </div>
             )}
@@ -351,7 +358,12 @@ export default function BarcodeLabelsPanel() {
                           onChange={e => setQty(q => ({ ...q, [p.id]: Math.max(0, Math.min(500, parseInt(e.target.value) || 0)) }))}
                           className="w-16 px-2 py-1 rounded-lg border border-gray-200 text-sm" />
                       </td>
-                      <td className="py-2">
+                      <td className="py-2 whitespace-nowrap">
+                        <button onClick={() => print(Array(Math.max(1, qty[p.id] ?? 0)).fill(p))}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-tpl-pale text-tpl-forest text-xs font-semibold hover:bg-tpl-lime/40"
+                          title={`Print ${Math.max(1, qty[p.id] ?? 0)} label(s) for this product only`}>
+                          <Printer className="h-3.5 w-3.5" />Print {Math.max(1, qty[p.id] ?? 0)}
+                        </button>
                         <button onClick={() => deleteProduct(p)} className="p-1.5 text-gray-400 hover:text-red-600" title="Delete">
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -362,7 +374,10 @@ export default function BarcodeLabelsPanel() {
               </table>
             </div>
           )}
-          <p className="text-xs text-gray-400 mt-2">Set how many labels each product needs in the Labels column.</p>
+          <p className="text-xs text-gray-400 mt-2">
+            Saved products stay here. To print more later, search for the product, set the number of labels and press its Print button,
+            or set numbers for several products and use Print below.
+          </p>
 
           <div className="grid sm:grid-cols-3 gap-3 mt-4">
             <div>
@@ -389,7 +404,7 @@ export default function BarcodeLabelsPanel() {
           </div>
 
           <div className="flex flex-wrap gap-2 mt-4">
-            <button onClick={print} disabled={labels.length === 0}
+            <button onClick={() => print()} disabled={labels.length === 0}
               className="flex items-center gap-2 px-4 py-2 rounded-xl bg-tpl-forest text-white text-sm font-semibold hover:bg-tpl-mid disabled:opacity-40">
               <Printer className="h-4 w-4" />Print {labels.length} label{labels.length === 1 ? '' : 's'}
             </button>
@@ -421,7 +436,7 @@ export default function BarcodeLabelsPanel() {
         <div id="label-print-root" className={paper.mode === 'roll' ? 'roll' : 'sheet'}
           style={{ ['--lw' as string]: `${paper.w}mm`, ['--lh' as string]: `${paper.h}mm` }}>
           <style>{pageCss}</style>
-          {labels.map((p, k) => <Label key={k} product={p} biz={biz} />)}
+          {printLabels.map((p, k) => <Label key={k} product={p} biz={biz} />)}
         </div>,
         document.body,
       )}
