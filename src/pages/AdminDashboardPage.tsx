@@ -823,12 +823,12 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-white rounded-2xl shadow-card p-1.5 mb-6 overflow-x-auto">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1 bg-white rounded-2xl shadow-card p-1.5 mb-6">
           {tabs.map(t => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap flex-1 justify-center ${tab === t.id ? 'bg-tpl-forest text-white shadow' : 'text-gray-500 hover:text-tpl-forest hover:bg-tpl-cream'}`}
+              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all text-center justify-center ${tab === t.id ? 'bg-tpl-forest text-white shadow' : 'text-gray-500 hover:text-tpl-forest hover:bg-tpl-cream'}`}
             >
               {t.icon}{t.label}
             </button>

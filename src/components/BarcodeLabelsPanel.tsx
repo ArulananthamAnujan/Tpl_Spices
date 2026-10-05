@@ -328,9 +328,9 @@ export default function BarcodeLabelsPanel() {
           ) : products.length === 0 ? (
             <p className="text-sm text-gray-400 py-3">No products yet. Save your first product on the left.</p>
           ) : (
-            <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+            <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-white">
+                <thead>
                   <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
                     <th className="py-2 pr-2">Product</th><th className="py-2 pr-2">Price</th>
                     <th className="py-2 pr-2">Barcode</th><th className="py-2 pr-2">Labels</th><th />
