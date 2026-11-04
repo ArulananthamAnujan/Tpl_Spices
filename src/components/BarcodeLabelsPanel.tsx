@@ -51,6 +51,10 @@ const hasWasPrice = (p: LabelProduct) => p.was_price_cents != null && p.was_pric
 const shownPrice = (p: LabelProduct) =>
   p.price_cents > 0 || p.was_price_cents == null ? p.price_cents : p.was_price_cents;
 
+const COLS = 'id, name, price_cents, was_price_cents, category, barcode';
+const COLS_NO_WAS = 'id, name, price_cents, category, barcode';
+const isMissingWasCol = (e: { message?: string }) => /was_price_cents/.test(e.message ?? '');
+
 const eanCheckDigit = (d: string) => {
   let s = 0;
   for (let i = 0; i < 12; i++) s += Number(d[i]) * (i % 2 ? 3 : 1);
@@ -116,6 +120,9 @@ export default function BarcodeLabelsPanel() {
   const [products, setProducts] = useState<LabelProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  // False until the was_price_cents column has been added in Supabase. Saved
+  // products still load, print and edit without it; only the real price is off.
+  const [hasWasCol, setHasWasCol] = useState(true);
   const [filter, setFilter] = useState('');
   const [qty, setQty] = useState<Record<string, number>>(() => readJson(QTY_KEY, {}));
   const [paper, setPaper] = useState<{ mode: PaperMode; w: number; h: number }>(() =>
@@ -134,18 +141,26 @@ export default function BarcodeLabelsPanel() {
 
   const loadProducts = useCallback(async () => {
     setLoading(true);
-    const rows: LabelProduct[] = [];
+    setLoadError('');
+    let withWas = true;
+    let rows: LabelProduct[] = [];
     // Read in pages — Supabase returns at most 1000 rows per query.
     for (let from = 0; ; from += 1000) {
       const { data, error } = await supabase
         .from('label_products')
-        .select('id, name, price_cents, was_price_cents, category, barcode')
+        .select(withWas ? COLS : COLS_NO_WAS)
         .order('name')
         .range(from, from + 999);
+      if (error && withWas && isMissingWasCol(error)) {
+        // Column not added yet: load everything again without it.
+        withWas = false; rows = []; from = -1000;
+        continue;
+      }
       if (error) { setLoadError(error.message); break; }
-      rows.push(...((data as LabelProduct[]) ?? []));
+      rows.push(...((data ?? []) as Partial<LabelProduct>[]).map(d => ({ was_price_cents: null, ...d }) as LabelProduct));
       if (!data || data.length < 1000) break;
     }
+    setHasWasCol(withWas);
     setProducts(rows);
     setLoading(false);
   }, []);
@@ -201,16 +216,16 @@ export default function BarcodeLabelsPanel() {
     const { data, error } = await supabase.from('label_products').insert({
       name,
       price_cents: priceCents,
-      was_price_cents: wasCents,
+      ...(hasWasCol ? { was_price_cents: wasCents } : {}),
       category: form.category.trim() || null,
       barcode: code,
-    }).select('id, name, price_cents, was_price_cents, category, barcode').single();
+    }).select(hasWasCol ? COLS : COLS_NO_WAS).single();
     setSaving(false);
     if (error) {
       setFormError(error.code === '23505' ? 'That barcode is already used by another product.' : error.message);
       return;
     }
-    const created = data as LabelProduct;
+    const created = { was_price_cents: null, ...(data as Partial<LabelProduct>) } as LabelProduct;
     setProducts(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
     setQty(q => ({ ...q, [created.id]: 1 }));
     setForm({ name: '', price: '', wasPrice: '', category: '', code: '' });
@@ -239,9 +254,9 @@ export default function BarcodeLabelsPanel() {
       return;
     }
     const { error } = await supabase.from('label_products')
-      .update({ price_cents: now, was_price_cents: was }).eq('id', p.id);
+      .update(hasWasCol ? { price_cents: now, was_price_cents: was } : { price_cents: now }).eq('id', p.id);
     if (error) { alert(error.message); return; }
-    setProducts(prev => prev.map(x => (x.id === p.id ? { ...x, price_cents: now, was_price_cents: was } : x)));
+    setProducts(prev => prev.map(x => (x.id === p.id ? { ...x, price_cents: now, was_price_cents: hasWasCol ? was : null } : x)));
   };
 
   const runScan = () => {
@@ -375,6 +390,12 @@ export default function BarcodeLabelsPanel() {
               </div>
             )}
           </div>
+          {!loading && !hasWasCol && (
+            <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2 mb-3">
+              Real (struck-off) prices are not saved yet: the <code>was_price_cents</code> column is missing in Supabase.
+              Run the SQL in <code>supabase/migrations/20261104090000_add_label_was_price.sql</code> to turn them on.
+            </p>
+          )}
           {loading ? (
             <p className="text-sm text-gray-400 py-3">Loading…</p>
           ) : loadError ? (
