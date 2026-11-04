@@ -45,8 +45,11 @@ const toCents = (v: string): number | null => {
   return v.trim() === '' || !Number.isFinite(n) || n < 0 ? null : Math.round(n * 100);
 };
 const centsToInput = (c: number | null) => (c == null ? '' : (c / 100).toFixed(2));
-// Only show a struck-off price when it is higher than the current price.
-const hasWasPrice = (p: LabelProduct) => p.was_price_cents != null && p.was_price_cents > p.price_cents;
+// A price of 0 counts as "not entered". The real price is struck off only
+// when both prices exist; if only one exists it is shown as the plain price.
+const hasWasPrice = (p: LabelProduct) => p.was_price_cents != null && p.was_price_cents > 0 && p.price_cents > 0;
+const shownPrice = (p: LabelProduct) =>
+  p.price_cents > 0 || p.was_price_cents == null ? p.price_cents : p.was_price_cents;
 
 const eanCheckDigit = (d: string) => {
   let s = 0;
@@ -95,9 +98,11 @@ function Label({ product, biz }: { product: LabelProduct; biz: Biz }) {
       {addr && <div className="sl-addr">{addr}</div>}
       <BarcodeSvg code={product.barcode} />
       <div className="sl-name">{product.name}</div>
+      {/* Real price (struck off) on the left, current price in the middle. */}
       <div className="sl-price">
-        {hasWasPrice(product) && <span className="sl-was">{formatPrice(product.was_price_cents!)}</span>}
-        <span>{formatPrice(product.price_cents)}</span>
+        <span className="sl-was">{hasWasPrice(product) ? formatPrice(product.was_price_cents!) : ''}</span>
+        <span className="sl-now">{formatPrice(shownPrice(product))}</span>
+        <span />
       </div>
     </div>
   );
@@ -185,7 +190,7 @@ export default function BarcodeLabelsPanel() {
     }
     const priceCents = toCents(form.price) ?? 0;
     const wasCents = toCents(form.wasPrice);
-    if (wasCents != null && wasCents <= priceCents) {
+    if (wasCents != null && wasCents > 0 && priceCents > 0 && wasCents <= priceCents) {
       setFormError('The real (struck-off) price must be higher than the current price, or leave it blank.');
       return;
     }
@@ -230,7 +235,7 @@ export default function BarcodeLabelsPanel() {
     const was = edit.was !== undefined ? toCents(edit.was) : p.was_price_cents;
     setPriceEdits(e => { const next = { ...e }; delete next[p.id]; return next; });
     if (now === p.price_cents && was === p.was_price_cents) return;
-    if (was != null && was <= now) {
+    if (was != null && was > 0 && now > 0 && was <= now) {
       alert('The real (struck-off) price must be higher than the current price. Leave it blank for no discount.');
       return;
     }
@@ -245,7 +250,7 @@ export default function BarcodeLabelsPanel() {
     setScanValue('');
     if (!code) return;
     const p = products.find(x => x.barcode === code);
-    setScanResult(p ? { ok: true, text: `${p.name} — ${formatPrice(p.price_cents)}${hasWasPrice(p) ? ` (was ${formatPrice(p.was_price_cents!)})` : ''}` } : { ok: false, text: `No product with code ${code}` });
+    setScanResult(p ? { ok: true, text: `${p.name} — ${formatPrice(shownPrice(p))}${hasWasPrice(p) ? ` (was ${formatPrice(p.was_price_cents!)})` : ''}` } : { ok: false, text: `No product with code ${code}` });
   };
 
   const downloadCsv = () => {
