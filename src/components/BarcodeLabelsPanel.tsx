@@ -98,11 +98,10 @@ function Label({ product, biz }: { product: LabelProduct; biz: Biz }) {
       {addr && <div className="sl-addr">{addr}</div>}
       <BarcodeSvg code={product.barcode} />
       <div className="sl-name">{product.name}</div>
-      {/* Real price (struck off) on the left, current price in the middle. */}
+      {/* Both prices centred side by side: real price (struck off), then current. */}
       <div className="sl-price">
-        <span className="sl-was">{hasWasPrice(product) ? formatPrice(product.was_price_cents!) : ''}</span>
+        {hasWasPrice(product) && <span className="sl-was">{formatPrice(product.was_price_cents!)}</span>}
         <span className="sl-now">{formatPrice(shownPrice(product))}</span>
-        <span />
       </div>
     </div>
   );

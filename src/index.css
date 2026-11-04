@@ -45,11 +45,9 @@
 .shop-label .sl-name { font-size: 15px; font-weight: 700; margin-top: 3px; }
 .shop-label .sl-price {
   font-size: 19px; font-weight: 800;
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .3em;
+  display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; gap: .5em;
 }
-.shop-label .sl-now { grid-column: 2; }
 .shop-label .sl-was {
-  grid-column: 1; justify-self: start;
   font-size: 1em; font-weight: 800; color: #000; white-space: nowrap;
   text-decoration: line-through; text-decoration-thickness: 2px;
 }
