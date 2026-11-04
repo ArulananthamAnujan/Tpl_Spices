@@ -16,6 +16,7 @@ interface LabelProduct {
   id: string;
   name: string;
   price_cents: number;
+  was_price_cents: number | null;
   category: string | null;
   barcode: string;
 }
@@ -37,6 +38,15 @@ const readJson = <T,>(key: string, fallback: T): T => {
 const writeJson = (key: string, value: unknown) => {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage unavailable */ }
 };
+
+// "12.50" -> 1250; blank or invalid -> null.
+const toCents = (v: string): number | null => {
+  const n = parseFloat(v);
+  return v.trim() === '' || !Number.isFinite(n) || n < 0 ? null : Math.round(n * 100);
+};
+const centsToInput = (c: number | null) => (c == null ? '' : (c / 100).toFixed(2));
+// Only show a struck-off price when it is higher than the current price.
+const hasWasPrice = (p: LabelProduct) => p.was_price_cents != null && p.was_price_cents > p.price_cents;
 
 const eanCheckDigit = (d: string) => {
   let s = 0;
@@ -85,7 +95,10 @@ function Label({ product, biz }: { product: LabelProduct; biz: Biz }) {
       {addr && <div className="sl-addr">{addr}</div>}
       <BarcodeSvg code={product.barcode} />
       <div className="sl-name">{product.name}</div>
-      <div className="sl-price">{formatPrice(product.price_cents)}</div>
+      <div className="sl-price">
+        {hasWasPrice(product) && <span className="sl-was">{formatPrice(product.was_price_cents!)}</span>}
+        <span>{formatPrice(product.price_cents)}</span>
+      </div>
     </div>
   );
 }
@@ -104,7 +117,7 @@ export default function BarcodeLabelsPanel() {
   const [paper, setPaper] = useState<{ mode: PaperMode; w: number; h: number }>(() =>
     readJson(PAPER_KEY, { mode: 'sheet' as PaperMode, w: 50, h: 30 }));
 
-  const [form, setForm] = useState({ name: '', price: '', category: '', code: '' });
+  const [form, setForm] = useState({ name: '', price: '', wasPrice: '', category: '', code: '' });
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -122,7 +135,7 @@ export default function BarcodeLabelsPanel() {
     for (let from = 0; ; from += 1000) {
       const { data, error } = await supabase
         .from('label_products')
-        .select('id, name, price_cents, category, barcode')
+        .select('id, name, price_cents, was_price_cents, category, barcode')
         .order('name')
         .range(from, from + 999);
       if (error) { setLoadError(error.message); break; }
@@ -170,6 +183,12 @@ export default function BarcodeLabelsPanel() {
       code = randomStoreCode();
       for (let n = 0; n < 50 && products.some(p => p.barcode === code); n++) code = randomStoreCode();
     }
+    const priceCents = toCents(form.price) ?? 0;
+    const wasCents = toCents(form.wasPrice);
+    if (wasCents != null && wasCents <= priceCents) {
+      setFormError('The real (struck-off) price must be higher than the current price, or leave it blank.');
+      return;
+    }
     const problem = validateCode(code);
     if (problem) { setFormError(problem); return; }
     if (products.some(p => p.barcode === code)) { setFormError('That barcode is already used by another product.'); return; }
@@ -177,10 +196,11 @@ export default function BarcodeLabelsPanel() {
     setSaving(true);
     const { data, error } = await supabase.from('label_products').insert({
       name,
-      price_cents: Math.round((parseFloat(form.price) || 0) * 100),
+      price_cents: priceCents,
+      was_price_cents: wasCents,
       category: form.category.trim() || null,
       barcode: code,
-    }).select('id, name, price_cents, category, barcode').single();
+    }).select('id, name, price_cents, was_price_cents, category, barcode').single();
     setSaving(false);
     if (error) {
       setFormError(error.code === '23505' ? 'That barcode is already used by another product.' : error.message);
@@ -189,7 +209,7 @@ export default function BarcodeLabelsPanel() {
     const created = data as LabelProduct;
     setProducts(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
     setQty(q => ({ ...q, [created.id]: 1 }));
-    setForm({ name: '', price: '', category: '', code: '' });
+    setForm({ name: '', price: '', wasPrice: '', category: '', code: '' });
     nameRef.current?.focus();
   };
 
@@ -201,17 +221,36 @@ export default function BarcodeLabelsPanel() {
     setQty(q => { const next = { ...q }; delete next[p.id]; return next; });
   };
 
+  // Edit prices of a saved product (saved when the field loses focus).
+  const [priceEdits, setPriceEdits] = useState<Record<string, { now?: string; was?: string }>>({});
+  const savePrices = async (p: LabelProduct) => {
+    const edit = priceEdits[p.id];
+    if (!edit) return;
+    const now = edit.now !== undefined ? toCents(edit.now) ?? 0 : p.price_cents;
+    const was = edit.was !== undefined ? toCents(edit.was) : p.was_price_cents;
+    setPriceEdits(e => { const next = { ...e }; delete next[p.id]; return next; });
+    if (now === p.price_cents && was === p.was_price_cents) return;
+    if (was != null && was <= now) {
+      alert('The real (struck-off) price must be higher than the current price. Leave it blank for no discount.');
+      return;
+    }
+    const { error } = await supabase.from('label_products')
+      .update({ price_cents: now, was_price_cents: was }).eq('id', p.id);
+    if (error) { alert(error.message); return; }
+    setProducts(prev => prev.map(x => (x.id === p.id ? { ...x, price_cents: now, was_price_cents: was } : x)));
+  };
+
   const runScan = () => {
     const code = scanValue.trim();
     setScanValue('');
     if (!code) return;
     const p = products.find(x => x.barcode === code);
-    setScanResult(p ? { ok: true, text: `${p.name} — ${formatPrice(p.price_cents)}` } : { ok: false, text: `No product with code ${code}` });
+    setScanResult(p ? { ok: true, text: `${p.name} — ${formatPrice(p.price_cents)}${hasWasPrice(p) ? ` (was ${formatPrice(p.was_price_cents!)})` : ''}` } : { ok: false, text: `No product with code ${code}` });
   };
 
   const downloadCsv = () => {
-    const rows = [['name', 'price', 'category', 'barcode'],
-      ...products.map(p => [p.name, (p.price_cents / 100).toFixed(2), p.category ?? '', p.barcode])];
+    const rows = [['name', 'price', 'was_price', 'category', 'barcode'],
+      ...products.map(p => [p.name, (p.price_cents / 100).toFixed(2), centsToInput(p.was_price_cents), p.category ?? '', p.barcode])];
     const text = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' }));
@@ -277,15 +316,19 @@ export default function BarcodeLabelsPanel() {
           <input ref={nameRef} className={inputCls} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className={labelCls}>Price ($)</label>
+              <label className={labelCls}>Current price ($)</label>
               <input className={inputCls} type="number" step="0.01" min="0" inputMode="decimal"
                 value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} />
             </div>
             <div>
-              <label className={labelCls}>Category</label>
-              <input className={inputCls} placeholder="optional" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} />
+              <label className={labelCls}>Real price ($, struck off)</label>
+              <input className={inputCls} type="number" step="0.01" min="0" inputMode="decimal" placeholder="optional"
+                value={form.wasPrice} onChange={e => setForm({ ...form, wasPrice: e.target.value })} />
             </div>
           </div>
+          <p className="text-xs text-gray-400 mt-1">Fill in the real price to show it crossed out next to the current price.</p>
+          <label className={labelCls}>Category</label>
+          <input className={inputCls} placeholder="optional" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} />
           <label className={labelCls}>Barcode number</label>
           <div className="flex gap-2">
             <input className={`${inputCls} font-mono`} placeholder="Leave blank to generate" inputMode="numeric"
@@ -339,7 +382,7 @@ export default function BarcodeLabelsPanel() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
-                    <th className="py-2 pr-2">Product</th><th className="py-2 pr-2">Price</th>
+                    <th className="py-2 pr-2">Product</th><th className="py-2 pr-2">Price (now / real)</th>
                     <th className="py-2 pr-2">Barcode</th><th className="py-2 pr-2">Labels</th><th />
                   </tr>
                 </thead>
@@ -350,7 +393,20 @@ export default function BarcodeLabelsPanel() {
                         <div className="font-medium text-tpl-dark">{p.name}</div>
                         {p.category && <div className="text-xs text-gray-400">{p.category}</div>}
                       </td>
-                      <td className="py-2 pr-2 whitespace-nowrap">{formatPrice(p.price_cents)}</td>
+                      <td className="py-2 pr-2 whitespace-nowrap">
+                        <div className="flex items-center gap-1">
+                          <input type="number" step="0.01" min="0" inputMode="decimal" aria-label={`Current price for ${p.name}`}
+                            value={priceEdits[p.id]?.now ?? centsToInput(p.price_cents)}
+                            onChange={e => setPriceEdits(x => ({ ...x, [p.id]: { ...x[p.id], now: e.target.value } }))}
+                            onBlur={() => savePrices(p)} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                            className="w-20 px-2 py-1 rounded-lg border border-gray-200 text-sm" />
+                          <input type="number" step="0.01" min="0" inputMode="decimal" placeholder="real" aria-label={`Real (struck-off) price for ${p.name}`}
+                            value={priceEdits[p.id]?.was ?? centsToInput(p.was_price_cents)}
+                            onChange={e => setPriceEdits(x => ({ ...x, [p.id]: { ...x[p.id], was: e.target.value } }))}
+                            onBlur={() => savePrices(p)} onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                            className={`w-20 px-2 py-1 rounded-lg border border-gray-200 text-sm ${hasWasPrice(p) ? 'line-through text-gray-500' : ''}`} />
+                        </div>
+                      </td>
                       <td className="py-2 pr-2 font-mono text-xs whitespace-nowrap">{p.barcode}</td>
                       <td className="py-2 pr-2">
                         <input type="number" min={0} max={500} value={qty[p.id] ?? 0}
