@@ -18,6 +18,7 @@ import OrderStatusBadge from '../components/OrderStatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import PricingPromotionsPanel from '../components/PricingPromotionsPanel';
 import BarcodeLabelsPanel from '../components/BarcodeLabelsPanel';
+import InventorySummary from '../components/InventorySummary';
 
 type Tab = 'orders' | 'stores' | 'staff' | 'catalog' | 'categories' | 'products' | 'inventory' | 'pricing' | 'labels' | 'promos';
 
@@ -216,19 +217,23 @@ export default function AdminDashboardPage() {
   const loadInventoryForStore = useCallback(async (storeId: string) => {
     if (!storeId) return;
     setInvLoading(true);
-    const [invRes, movesRes] = await Promise.all([
-      supabase.from('store_inventory').select('variation_id, quantity').eq('store_id', storeId),
-      supabase
-        .from('inventory_movements')
-        .select('id, variation_id, delta, reason, received_at, created_at, note, creator:profiles(full_name)')
-        .eq('store_id', storeId)
-        .order('created_at', { ascending: false }),
+    // Both tables can exceed Supabase's 1000-row response cap, so page through.
+    const [invData, movesData] = await Promise.all([
+      fetchAllRows<{ variation_id: string; quantity: number }>(() =>
+        supabase.from('store_inventory').select('variation_id, quantity').eq('store_id', storeId).order('variation_id')),
+      fetchAllRows<InvMove>(() =>
+        supabase
+          .from('inventory_movements')
+          .select('id, variation_id, delta, reason, received_at, created_at, note, creator:profiles(full_name)')
+          .eq('store_id', storeId)
+          .order('created_at', { ascending: false })
+          .order('id')),
     ]);
     const map: Record<string, number> = {};
-    (invRes.data ?? []).forEach(r => { map[r.variation_id] = r.quantity; });
+    invData.forEach(r => { map[r.variation_id] = r.quantity; });
     setInvRows(map);
     const moveMap: Record<string, InvMove[]> = {};
-    ((movesRes.data as InvMove[] | null) ?? []).forEach(m => {
+    movesData.forEach(m => {
       (moveMap[m.variation_id] = moveMap[m.variation_id] ?? []).push(m);
     });
     setInvMoves(moveMap);
@@ -1839,6 +1844,10 @@ export default function AdminDashboardPage() {
                   </div>
                 </div>
 
+                {invStoreId && !invLoading && (
+                  <InventorySummary products={invProducts} stock={invRows} moves={invMoves} />
+                )}
+
                 {!invStoreId ? (
                   <div className="bg-white rounded-2xl shadow-card p-12 text-center">
                     <Boxes className="h-12 w-12 text-gray-300 mx-auto mb-4" />
@@ -1850,7 +1859,14 @@ export default function AdminDashboardPage() {
                   <div className="bg-white rounded-2xl shadow-card overflow-hidden">
                     <div className="divide-y divide-gray-100">
                       {invProducts
-                        .filter(p => !invSearch || p.name.toLowerCase().includes(invSearch.toLowerCase()))
+                        .filter(p => {
+                          const q = invSearch.trim().toLowerCase();
+                          if (!q) return true;
+                          return q.split(/\s+/).every(w =>
+                            p.name.toLowerCase().includes(w)
+                            || (p.category?.name ?? '').toLowerCase().includes(w)
+                            || (p.variations ?? []).some(v => v.name.toLowerCase().includes(w)));
+                        })
                         .map(product => (
                           <div key={product.id} className="p-4">
                             <p className="text-sm font-semibold text-tpl-dark mb-2">{product.name}</p>
@@ -1862,7 +1878,14 @@ export default function AdminDashboardPage() {
                                 const saving = invSavingId === v.id;
                                 return (
                                   <div key={v.id} className="flex items-center gap-2 bg-tpl-cream rounded-xl px-3 py-2">
-                                    <span className="text-xs text-gray-600 flex-1 truncate">{v.name}</span>
+                                    <span className="flex-1 min-w-0">
+                                      <span className="block text-xs text-gray-600 truncate">{v.name} · {formatPrice(v.price_cents)}</span>
+                                      {tracked && currentQty > 0 && (
+                                        <span className="block text-[11px] font-semibold text-tpl-forest" title="Quantity × price">
+                                          Worth {formatPrice(currentQty * v.price_cents)}
+                                        </span>
+                                      )}
+                                    </span>
                                     <input
                                       type="number"
                                       min={0}

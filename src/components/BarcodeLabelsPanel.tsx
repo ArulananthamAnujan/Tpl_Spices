@@ -304,9 +304,11 @@ export default function BarcodeLabelsPanel() {
     ? `@page{size:${paper.w}mm ${paper.h}mm;margin:0}`
     : '@page{size:A4;margin:10mm}';
 
+  // Every word typed must appear in the name, category or barcode.
+  const words = filter.trim().toLowerCase().split(/\s+/).filter(Boolean);
   const visible = products.filter(p => {
-    const f = filter.trim().toLowerCase();
-    return !f || p.name.toLowerCase().includes(f) || p.barcode.includes(f) || (p.category ?? '').toLowerCase().includes(f);
+    const hay = `${p.name} ${p.category ?? ''} ${p.barcode}`.toLowerCase();
+    return words.every(w => hay.includes(w));
   });
 
   const inputCls = 'w-full px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-tpl-forest/30';
