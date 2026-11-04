@@ -50,7 +50,7 @@
 .shop-label .sl-now { grid-column: 2; }
 .shop-label .sl-was {
   grid-column: 1; justify-self: start;
-  font-size: .85em; font-weight: 700; color: #333; white-space: nowrap;
+  font-size: 1em; font-weight: 800; color: #000; white-space: nowrap;
   text-decoration: line-through; text-decoration-thickness: 2px;
 }
 .shop-label svg { max-width: 100%; height: 46px; margin: 0 auto; }
