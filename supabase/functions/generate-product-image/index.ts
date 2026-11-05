@@ -198,6 +198,26 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  // Only signed-in super admins may generate images: this function writes to
+  // storage and to products with the service role.
+  const authClient = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } },
+  );
+  const { data: { user } } = await authClient.auth.getUser();
+  if (!user) {
+    return new Response(JSON.stringify({ success: false, error: "Please sign in as an admin." }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const { data: profile } = await authClient.from("profiles").select("role").eq("id", user.id).maybeSingle();
+  if (profile?.role !== "super_admin") {
+    return new Response(JSON.stringify({ success: false, error: "Forbidden" }), {
+      status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
   const openaiKey = req.headers.get("X-OpenAI-Key");
   if (!openaiKey) {
     return ok({ success: false, error: "Missing X-OpenAI-Key header. Enter your OpenAI API key in the panel." });
@@ -220,6 +240,10 @@ Deno.serve(async (req: Request) => {
   if (!productId || !productName) {
     return ok({ success: false, error: "productId and productName are required." });
   }
+  // productId becomes part of the storage path, so it must be a plain UUID.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId)) {
+    return ok({ success: false, error: "Invalid productId." });
+  }
 
   let imageBytes: Uint8Array;
 
@@ -228,8 +252,8 @@ Deno.serve(async (req: Request) => {
     // Uses gpt-image-1 edits WITH a generated mask so only the background is
     // changed and the product stays pixel-perfect identical.
 
-    if (!existingImageUrl.startsWith("http://") && !existingImageUrl.startsWith("https://")) {
-      return ok({ success: false, error: "existingImageUrl must be an absolute URL." });
+    if (!existingImageUrl.startsWith("https://")) {
+      return ok({ success: false, error: "existingImageUrl must be an https URL." });
     }
 
     let existingBytes: Uint8Array;

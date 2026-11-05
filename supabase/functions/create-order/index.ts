@@ -67,8 +67,29 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    const bad = (msg: string) => new Response(JSON.stringify({ error: msg }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+    const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const shortText = (v: unknown, max: number) => v == null || (typeof v === "string" && v.length <= max);
+    if (!UUID.test(String(store_id))) return bad("Invalid store");
+    if (fulfillment_type !== "PICKUP" && fulfillment_type !== "DELIVERY") return bad("Invalid fulfillment type");
+    if (!Array.isArray(items) || items.length > 100) return bad("Too many items in cart");
+    if (typeof payment_token !== "string" || payment_token.length > 1000) return bad("Invalid payment details");
+    if (!shortText(notes, 1000)) return bad("Notes are too long");
+    if (scheduled_time != null && (typeof scheduled_time !== "string" || Number.isNaN(Date.parse(scheduled_time)))) {
+      return bad("Invalid scheduled time");
+    }
+    if (delivery_address != null) {
+      const a = delivery_address as Record<string, unknown>;
+      if (typeof a !== "object" || !["street", "suburb", "state", "postcode"].every(k => shortText(a[k], 200))) {
+        return bad("Invalid delivery address");
+      }
+    }
+
     for (const item of items) {
-      if (!item.variation_id || !Number.isInteger(item.qty) || item.qty < 1 || item.qty > 999) {
+      if (!UUID.test(String(item.variation_id)) || !Number.isInteger(item.qty) || item.qty < 1 || item.qty > 999) {
         return new Response(JSON.stringify({ error: "Invalid item in cart" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -118,7 +139,7 @@ Deno.serve(async (req: Request) => {
     const variationIds = [...new Set(items.map(i => i.variation_id))];
     const { data: variations, error: variationsErr } = await supabaseAdmin
       .from("product_variations")
-      .select("id, price_cents, product_id, wholesale_price_cents, wholesale_min_qty, promo_type, promo_value, promo_start, promo_end, products!inner(active)")
+      .select("id, name, price_cents, product_id, wholesale_price_cents, wholesale_min_qty, promo_type, promo_value, promo_start, promo_end, products!inner(active, name)")
       .in("id", variationIds);
 
     if (variationsErr) {
@@ -135,6 +156,8 @@ Deno.serve(async (req: Request) => {
       const product = Array.isArray((v as any).products) ? (v as any).products[0] : (v as any).products;
       if (product?.active === false) continue; // don't sell delisted items
       if (!(v.price_cents > 0)) continue; // no fixed price in Square — priced on request
+      // Item names come from the catalogue, not from the browser.
+      (v as any).display_name = `${product?.name ?? "Item"} – ${v.name}`;
       varById.set(v.id, v);
     }
 
@@ -210,7 +233,7 @@ Deno.serve(async (req: Request) => {
     const lineItems = items.map(item => ({
       quantity: String(item.qty),
       base_price_money: { amount: unitCentsFor(item.variation_id, item.qty), currency: "AUD" },
-      name: item.name_snapshot,
+      name: varById.get(item.variation_id).display_name,
     }));
 
     if (deliveryFeeCents > 0) {
@@ -329,7 +352,7 @@ Deno.serve(async (req: Request) => {
     const orderItems = items.map(item => ({
       order_id: dbOrder.id,
       variation_id: item.variation_id,
-      name_snapshot: item.name_snapshot,
+      name_snapshot: varById.get(item.variation_id).display_name,
       qty: item.qty,
       unit_price_cents: unitCentsFor(item.variation_id, item.qty),
     }));
@@ -357,8 +380,9 @@ Deno.serve(async (req: Request) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err: any) {
+    console.error("create-order error:", err?.message ?? err);
     return new Response(
-      JSON.stringify({ error: err.message ?? "Unknown error" }),
+      JSON.stringify({ error: "Something went wrong placing your order. Please try again." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

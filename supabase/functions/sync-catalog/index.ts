@@ -20,7 +20,11 @@ Deno.serve(async (req: Request) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
+    // Signed-in callers must be super admins. Calls without a signed-in user
+    // come from the scheduled sync (pg_cron with the anon key); they may only
+    // use the server's own Square token, never one from the request.
     const { data: { user } } = await supabaseClient.auth.getUser();
+    const isAdmin = !!user;
     if (user) {
       const { data: profile } = await supabaseClient
         .from("profiles")
@@ -38,7 +42,8 @@ Deno.serve(async (req: Request) => {
     let bodyData: any = {};
     try { bodyData = await req.json(); } catch {}
 
-    const squareToken = bodyData?.square_token || Deno.env.get("SQUARE_ACCESS_TOKEN");
+    const squareToken = (isAdmin && typeof bodyData?.square_token === "string" && bodyData.square_token)
+      || Deno.env.get("SQUARE_ACCESS_TOKEN");
     if (!squareToken) {
       return new Response(JSON.stringify({ error: "No Square access token provided." }), {
         status: 400,
@@ -46,7 +51,9 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const squareEnv = bodyData?.square_env || Deno.env.get("SQUARE_ENV") || "sandbox";
+    const squareEnv = (bodyData?.square_env === "production" || bodyData?.square_env === "sandbox")
+      ? bodyData.square_env
+      : (Deno.env.get("SQUARE_ENV") || "sandbox");
     const squareBase = squareEnv === "production"
       ? "https://connect.squareup.com"
       : "https://connect.squareupsandbox.com";
